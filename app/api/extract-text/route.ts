@@ -15,11 +15,22 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ Import dynamique SAFE (CommonJS)
-    const pdfParseModule: any = await import("pdf-parse");
-    const pdfParse = pdfParseModule.default ?? pdfParseModule;
+    /* =====================================================
+       🔧 POLYFILLS OBLIGATOIRES POUR pdf-parse SUR VERCEL
+       ===================================================== */
+    (global as any).DOMMatrix = class {};
+    (global as any).ImageData = class {};
+    (global as any).Path2D = class {};
 
+    // Import dynamique APRÈS polyfills (VERSION CORRECTE)
+const pdfParseModule = await import("pdf-parse");
+const pdfParse = (pdfParseModule as any).default ?? pdfParseModule;
+
+
+    // PDF → Buffer
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Parse PDF
     const parsed = await pdfParse(buffer);
 
     if (!parsed.text || !parsed.text.trim()) {
@@ -29,6 +40,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // Clean text
     const cleanedText = cleanText(parsed.text);
 
     return NextResponse.json({
