@@ -15,7 +15,8 @@ export async function GET(
     return NextResponse.json({ error: "Type invalide" }, { status: 400 });
   }
 
-  const filePath = path.join(os.tmpdir(), "examforge", examId, `${type}.pdf`);
+  const baseDir = path.join(os.tmpdir(), "examforge", examId);
+  const filePath = path.join(baseDir, `${type}.pdf`);
 
   if (!fs.existsSync(filePath)) {
     return NextResponse.json({ error: "Fichier introuvable" }, { status: 404 });
@@ -27,7 +28,7 @@ export async function GET(
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${type}.pdf"`,
+      "Cache-Control": "no-store",
     },
   });
 }
-

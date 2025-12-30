@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 type Difficulty = "easy" | "medium" | "hard";
 type QcmMode = "single" | "multiple";
@@ -8,27 +8,23 @@ type QcmMode = "single" | "multiple";
 export default function Page() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [paid, setPaid] = useState(false); // 🔐 VERROU RÉEL
+  const [paid, setPaid] = useState(false);
+
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [qcmMode, setQcmMode] = useState<QcmMode>("single");
-  const [links, setLinks] = useState<{
-    exam: string;
-    correction: string;
-  } | null>(null);
+  const [links, setLinks] = useState<{ exam: string; correction: string } | null>(
+    null
+  );
 
-  /* =========================
-     🔐 DEBLOCAGE APRES REDIRECT
-     ========================= */
+  // ✅ Détection du retour Payhip
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("paid") === "1") {
       setPaid(true);
+      window.history.replaceState({}, "", "/");
     }
   }, []);
 
-  /* =========================
-     GENERATION (APRES PAIEMENT)
-     ========================= */
   async function handleGenerate() {
     if (!file || busy || !paid) return;
 
@@ -39,10 +35,7 @@ export default function Page() {
       const fd = new FormData();
       fd.append("file", file);
 
-      const r1 = await fetch("/api/extract-text", {
-        method: "POST",
-        body: fd,
-      });
+      const r1 = await fetch("/api/extract-text", { method: "POST", body: fd });
       const c5 = await r1.json();
       if (c5.status !== "OK") throw new Error(c5.message);
 
@@ -72,29 +65,10 @@ export default function Page() {
 
       setLinks(c7.files);
     } catch (e: any) {
-      alert(e.message || "حدث خطأ");
+      alert(e?.message || "حدث خطأ غير متوقع");
     } finally {
       setBusy(false);
     }
-  }
-
-  /* =========================
-     PAYHIP (PAIEMENT SEUL)
-     ========================= */
-  function handlePay() {
-    if (!file || busy) return;
-
-    const payhipBtn = document.querySelector(
-      ".payhip-buy-button"
-    ) as HTMLAnchorElement | null;
-
-    if (!payhipBtn) {
-      alert("Payment system not loaded");
-      return;
-    }
-
-    payhipBtn.click();
-    // ❌ PAS DE setPaid ICI
   }
 
   return (
@@ -104,34 +78,12 @@ export default function Page() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background:
-          "radial-gradient(circle at top right, #163b5f, #070f1f)",
+        background: "radial-gradient(circle at top right, #163b5f, #070f1f)",
         direction: "rtl",
         color: "#fff",
         fontFamily: "system-ui, sans-serif",
       }}
     >
-      {/* PAYHIP BUTTON — OFFSCREEN */}
-      <a
-        href="https://payhip.com/b/06TAx"
-        className="payhip-buy-button"
-        data-theme="grey"
-        data-product="06TAx"
-        aria-hidden="true"
-        tabIndex={-1}
-        style={{
-          position: "fixed",
-          left: "-9999px",
-          top: "-9999px",
-          width: 0,
-          height: 0,
-          opacity: 0,
-          pointerEvents: "none",
-        }}
-      >
-        Pay
-      </a>
-
       <div
         style={{
           width: 420,
@@ -142,7 +94,6 @@ export default function Page() {
           boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
         }}
       >
-        {/* TITLE */}
         <div
           style={{
             padding: "14px 18px",
@@ -165,12 +116,19 @@ export default function Page() {
         </Section>
 
         <Section title="نوع الأسئلة :">
-          <Radio label="إجابة صحيحة واحدة" checked={qcmMode === "single"} onChange={() => setQcmMode("single")} />
-          <Radio label="عدة إجابات صحيحة" checked={qcmMode === "multiple"} onChange={() => setQcmMode("multiple")} />
+          <Radio
+            label="إجابة صحيحة واحدة"
+            checked={qcmMode === "single"}
+            onChange={() => setQcmMode("single")}
+          />
+          <Radio
+            label="عدة إجابات صحيحة"
+            checked={qcmMode === "multiple"}
+            onChange={() => setQcmMode("multiple")}
+          />
         </Section>
 
-        {/* FILE */}
-        <div style={{ marginBottom: 26, textAlign: "center" }}>
+        <div style={{ marginBottom: 18, textAlign: "center" }}>
           <label
             style={{
               display: "inline-block",
@@ -181,7 +139,6 @@ export default function Page() {
               cursor: "pointer",
               fontSize: 13,
               fontWeight: 600,
-              color: "#eef4ff",
             }}
           >
             📤 تحميل ملف الدرس
@@ -198,30 +155,67 @@ export default function Page() {
           </div>
         </div>
 
-        {/* PAY */}
-        <button
-          onClick={handlePay}
-          disabled={!file || busy || paid}
-          style={mainBtn(!paid)}
+        {/* 🟢 Bouton paiement */}
+        <a
+          href="https://payhip.com/b/06TAx"
+          style={{
+            display: "block",
+            width: "100%",
+            padding: "12px 0",
+            borderRadius: 14,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background: "rgba(59,130,246,0.45)",
+            color: "#fff",
+            fontSize: 14,
+            fontWeight: 600,
+            textAlign: "center",
+            textDecoration: "none",
+            marginBottom: 8,
+            pointerEvents: busy ? "none" : "auto",
+            opacity: busy ? 0.6 : 1,
+          }}
         >
-          الدفع (2$)
-        </button>
+          الدفع ($2)
+        </a>
 
-        {/* GENERATE */}
+        {/* 🔒 Message de réassurance */}
+        <div
+          style={{
+            textAlign: "center",
+            fontSize: 12,
+            color: "rgba(255,255,255,0.75)",
+            marginBottom: 18,
+          }}
+        >
+          🔒 دفع آمن – الرجوع مباشرة بعد الدفع
+        </div>
+
         <button
           onClick={handleGenerate}
-          disabled={!paid || busy}
-          style={mainBtn(paid)}
+          disabled={!file || busy || !paid}
+          style={{
+            width: "100%",
+            padding: "14px 0",
+            borderRadius: 14,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background:
+              !paid || busy ? "rgba(255,255,255,0.22)" : "rgba(59,130,246,0.45)",
+            color: "#fff",
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: !paid || busy ? "not-allowed" : "pointer",
+            marginBottom: 20,
+          }}
         >
           {busy ? "⏳ جاري إنشاء الامتحان..." : "إنشاء الامتحان"}
         </button>
 
         {links && (
           <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
-            <a href={links.exam} target="_blank" style={downloadBtn}>
+            <a href={links.exam} target="_blank" rel="noreferrer" style={downloadBtn}>
               📄 تحميل الامتحان
             </a>
-            <a href={links.correction} target="_blank" style={downloadBtn}>
+            <a href={links.correction} target="_blank" rel="noreferrer" style={downloadBtn}>
               📘 تحميل التصحيح
             </a>
           </div>
@@ -231,24 +225,7 @@ export default function Page() {
   );
 }
 
-/* ===== STYLES (INCHANGÉS) ===== */
-
-const mainBtn = (active: boolean) => ({
-  width: "100%",
-  padding: "14px 0",
-  borderRadius: 14,
-  border: "1px solid rgba(255,255,255,0.15)",
-  background: active
-    ? "rgba(59,130,246,0.45)"
-    : "rgba(255,255,255,0.18)",
-  color: "#fff",
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: active ? "pointer" : "not-allowed",
-  marginBottom: 12,
-});
-
-const downloadBtn = {
+const downloadBtn: React.CSSProperties = {
   padding: "8px 14px",
   borderRadius: 10,
   background: "rgba(255,255,255,0.12)",
@@ -302,4 +279,3 @@ function Radio({
     </label>
   );
 }
-

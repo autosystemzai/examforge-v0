@@ -20,16 +20,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="ar">
       <head>
-        {/* Payhip script – MUST be loaded once globally */}
+        {/* ✅ Payhip script — DOIT être chargé après l’interaction */}
         <Script
           src="https://payhip.com/payhip.js"
-          strategy="beforeInteractive"
+          strategy="afterInteractive"
         />
       </head>
       <body
@@ -40,4 +40,3 @@ export default function RootLayout({
     </html>
   );
 }
-
