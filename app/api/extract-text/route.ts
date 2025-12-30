@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { cleanText } from "@/lib/cleanText";
 
-// ✅ CommonJS import (OBLIGATOIRE ici)
-const pdfParse = require("pdf-parse");
-
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
@@ -18,17 +15,20 @@ export async function POST(req: Request) {
       );
     }
 
-    // PDF → Buffer
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // ✅ Import dynamique SAFE (CommonJS)
+    const pdfParseModule: any = await import("pdf-parse");
+    const pdfParse = pdfParseModule.default ?? pdfParseModule;
 
-    // Parse PDF
+    const buffer = Buffer.from(await file.arrayBuffer());
     const parsed = await pdfParse(buffer);
 
     if (!parsed.text || !parsed.text.trim()) {
-      throw new Error("PDF_EMPTY_OR_UNREADABLE");
+      return NextResponse.json(
+        { status: "ERROR", step: "C5", message: "PDF_EMPTY_OR_UNREADABLE" },
+        { status: 400 }
+      );
     }
 
-    // Clean text
     const cleanedText = cleanText(parsed.text);
 
     return NextResponse.json({
