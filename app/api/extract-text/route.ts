@@ -1,27 +1,40 @@
 import { NextResponse } from "next/server";
 import { cleanText } from "@/lib/cleanText";
 
+// ✅ CommonJS import (OBLIGATOIRE ici)
+const pdfParse = require("pdf-parse");
+
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const formData = await req.formData();
+    const file = formData.get("file");
 
-    const rawText = body?.text;
-
-    if (!rawText || typeof rawText !== "string") {
+    if (!(file instanceof File)) {
       return NextResponse.json(
-        { status: "ERROR", step: "C5", message: "NO_TEXT_PROVIDED" },
+        { status: "ERROR", step: "C5", message: "NO_FILE_PROVIDED" },
         { status: 400 }
       );
     }
 
-    const cleanedText = cleanText(rawText);
+    // PDF → Buffer
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Parse PDF
+    const parsed = await pdfParse(buffer);
+
+    if (!parsed.text || !parsed.text.trim()) {
+      throw new Error("PDF_EMPTY_OR_UNREADABLE");
+    }
+
+    // Clean text
+    const cleanedText = cleanText(parsed.text);
 
     return NextResponse.json({
       status: "OK",
       step: "C5",
-      rawLength: rawText.length,
+      rawLength: parsed.text.length,
       cleanedLength: cleanedText.length,
       preview: cleanedText.slice(0, 300),
       cleanedText,
