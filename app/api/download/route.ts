@@ -7,19 +7,25 @@ export const runtime = "nodejs";
 
 export async function GET(
   _req: Request,
-  { params }: { params: { examId: string; type: string } }
+  context: { params: Promise<{ examId: string; type: string }> }
 ) {
-  const { examId, type } = params;
+  const { examId, type } = await context.params;
 
   if (!["qcm", "correction"].includes(type)) {
-    return NextResponse.json({ error: "Type invalide" }, { status: 400 });
+    return NextResponse.json(
+      { error: "TYPE_INVALIDE" },
+      { status: 400 }
+    );
   }
 
   const baseDir = path.join(os.tmpdir(), "examforge", examId);
   const filePath = path.join(baseDir, `${type}.pdf`);
 
   if (!fs.existsSync(filePath)) {
-    return NextResponse.json({ error: "Fichier introuvable" }, { status: 404 });
+    return NextResponse.json(
+      { error: "FICHIER_INTROUVABLE" },
+      { status: 404 }
+    );
   }
 
   const fileBuffer = fs.readFileSync(filePath);
