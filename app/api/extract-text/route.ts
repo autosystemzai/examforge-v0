@@ -1,5 +1,11 @@
 export const runtime = "nodejs";
 
+/**
+ * POST /api/extract-text
+ * - reçoit un PDF (FormData)
+ * - forward vers le service PDF Railway
+ * - renvoie le JSON parsé
+ */
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -12,7 +18,8 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!process.env.PDF_SERVICE_URL) {
+    const pdfServiceUrl = process.env.PDF_SERVICE_URL;
+    if (!pdfServiceUrl) {
       return Response.json(
         { status: "ERROR", message: "PDF_SERVICE_URL_MISSING" },
         { status: 500 }
@@ -23,24 +30,24 @@ export async function POST(req: Request) {
     const fd = new FormData();
     fd.append("file", file);
 
-    const res = await fetch(
-      process.env.PDF_SERVICE_URL + "/extract-text",
-      {
-        method: "POST",
-        body: fd,
-      }
-    );
+    const res = await fetch(`${pdfServiceUrl}/extract-text`, {
+      method: "POST",
+      body: fd,
+    });
 
     const text = await res.text();
 
     if (!res.ok) {
       return Response.json(
-        { status: "ERROR", message: text || "PDF_SERVICE_ERROR" },
+        {
+          status: "ERROR",
+          message: text || "PDF_SERVICE_ERROR",
+        },
         { status: 500 }
       );
     }
 
-    // ✅ SAFE JSON PARSE
+    // SAFE JSON PARSE
     let data;
     try {
       data = JSON.parse(text);
@@ -49,7 +56,7 @@ export async function POST(req: Request) {
         {
           status: "ERROR",
           message: "INVALID_RESPONSE_FROM_PDF_SERVICE",
-          raw: text.slice(0, 500),
+          raw: text.slice(0, 300),
         },
         { status: 500 }
       );
@@ -58,11 +65,18 @@ export async function POST(req: Request) {
     return Response.json(data);
   } catch (e: any) {
     return Response.json(
-      { status: "ERROR", message: e?.message || "EXTRACT_FAILED" },
+      {
+        status: "ERROR",
+        message: e?.message || "EXTRACT_FAILED",
+      },
       { status: 500 }
     );
   }
 }
+
+/**
+ * OPTIONS — nécessaire pour le preflight (FormData + POST)
+ */
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
