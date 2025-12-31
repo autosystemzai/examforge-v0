@@ -13,11 +13,12 @@ export default function Page() {
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [qcmMode, setQcmMode] = useState<QcmMode>("single");
 
+  // 🔧 MODIF : on stocke du HTML au lieu de liens
   const [html, setHtml] = useState<{ exam: string; correction: string } | null>(
     null
   );
 
-  /* ===== Payhip return ===== */
+  // ✅ Détection du retour Payhip
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("paid") === "1") {
@@ -26,16 +27,6 @@ export default function Page() {
     }
   }, []);
 
-  /* ===== Safe JSON helper ===== */
-  async function safeJson(res: Response) {
-    const txt = await res.text();
-    try {
-      return JSON.parse(txt);
-    } catch {
-      throw new Error("Réponse serveur invalide");
-    }
-  }
-
   async function handleGenerate() {
     if (!file || busy || !paid) return;
 
@@ -43,19 +34,13 @@ export default function Page() {
       setBusy(true);
       setHtml(null);
 
-      /* ===== C5 extract ===== */
       const fd = new FormData();
       fd.append("file", file);
 
-      const r1 = await fetch("/api/extract-text", {
-        method: "POST",
-        body: fd,
-      });
+      const r1 = await fetch("/api/extract-text", { method: "POST", body: fd });
+      const c5 = await r1.json();
+      if (c5.status !== "OK") throw new Error(c5.message);
 
-      const c5 = await safeJson(r1);
-      if (c5.status !== "OK") throw new Error(c5.message || "Extraction échouée");
-
-      /* ===== C6 QCM ===== */
       const r2 = await fetch("/api/generate-qcm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -69,20 +54,18 @@ export default function Page() {
           },
         }),
       });
+      const c6 = await r2.json();
+      if (c6.status !== "OK") throw new Error(c6.message);
 
-      const c6 = await safeJson(r2);
-      if (c6.status !== "OK") throw new Error(c6.message || "QCM échoué");
-
-      /* ===== C7 HTML exam + correction ===== */
       const r3 = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questions: c6.data.questions }),
       });
+      const c7 = await r3.json();
+      if (c7.status !== "OK") throw new Error(c7.message);
 
-      const c7 = await safeJson(r3);
-      if (c7.status !== "OK") throw new Error(c7.message || "HTML échoué");
-
+      // 🔧 MODIF : on récupère le HTML
       setHtml({
         exam: c7.examHtml,
         correction: c7.correctionHtml,
@@ -94,6 +77,7 @@ export default function Page() {
     }
   }
 
+  // 🔧 MODIF : ouverture HTML dans nouvel onglet
   function openHtml(html: string) {
     const w = window.open("", "_blank");
     if (!w) return;
@@ -125,9 +109,20 @@ export default function Page() {
           boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
         }}
       >
-        <h1 style={{ textAlign: "center", marginBottom: 28 }}>
-          منصة إنشاء اختبارات (QCM)
-        </h1>
+        <div
+          style={{
+            padding: "14px 18px",
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.06)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            textAlign: "center",
+            marginBottom: 28,
+          }}
+        >
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
+            منصة إنشاء اختبارات (QCM)
+          </h1>
+        </div>
 
         <Section title="مستوى الصعوبة :">
           <Radio label="سهل" checked={difficulty === "easy"} onChange={() => setDifficulty("easy")} />
@@ -136,12 +131,31 @@ export default function Page() {
         </Section>
 
         <Section title="نوع الأسئلة :">
-          <Radio label="إجابة صحيحة واحدة" checked={qcmMode === "single"} onChange={() => setQcmMode("single")} />
-          <Radio label="عدة إجابات صحيحة" checked={qcmMode === "multiple"} onChange={() => setQcmMode("multiple")} />
+          <Radio
+            label="إجابة صحيحة واحدة"
+            checked={qcmMode === "single"}
+            onChange={() => setQcmMode("single")}
+          />
+          <Radio
+            label="عدة إجابات صحيحة"
+            checked={qcmMode === "multiple"}
+            onChange={() => setQcmMode("multiple")}
+          />
         </Section>
 
-        <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <label style={{ cursor: "pointer" }}>
+        <div style={{ marginBottom: 18, textAlign: "center" }}>
+          <label
+            style={{
+              display: "inline-block",
+              padding: "10px 18px",
+              background: "rgba(59,130,246,0.42)",
+              border: "1px solid rgba(59,130,246,0.65)",
+              borderRadius: 10,
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
             📤 تحميل ملف الدرس
             <input
               type="file"
@@ -150,23 +164,68 @@ export default function Page() {
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
           </label>
-          <div style={{ fontSize: 12 }}>{file ? file.name : "لم يتم اختيار ملف"}</div>
+
+          <div style={{ marginTop: 8, fontSize: 12 }}>
+            {file ? file.name : "لم يتم اختيار أي ملف"}
+          </div>
         </div>
 
-        <a href="https://payhip.com/b/06TAx" style={payBtn}>
+        <a
+          href="https://payhip.com/b/06TAx"
+          style={{
+            display: "block",
+            width: "100%",
+            padding: "12px 0",
+            borderRadius: 14,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background: "rgba(59,130,246,0.45)",
+            color: "#fff",
+            fontSize: 14,
+            fontWeight: 600,
+            textAlign: "center",
+            textDecoration: "none",
+            marginBottom: 8,
+            pointerEvents: busy ? "none" : "auto",
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
           الدفع ($2)
         </a>
+
+        <div
+          style={{
+            textAlign: "center",
+            fontSize: 12,
+            color: "rgba(255,255,255,0.75)",
+            marginBottom: 18,
+          }}
+        >
+          🔒 دفع آمن – الرجوع مباشرة بعد الدفع
+        </div>
 
         <button
           onClick={handleGenerate}
           disabled={!file || busy || !paid}
-          style={generateBtn(!paid || busy)}
+          style={{
+            width: "100%",
+            padding: "14px 0",
+            borderRadius: 14,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background:
+              !paid || busy ? "rgba(255,255,255,0.22)" : "rgba(59,130,246,0.45)",
+            color: "#fff",
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: !paid || busy ? "not-allowed" : "pointer",
+            marginBottom: 20,
+          }}
         >
-          {busy ? "⏳ جاري الإنشاء..." : "إنشاء الامتحان"}
+          {busy ? "⏳ جاري إنشاء الامتحان..." : "إنشاء الامتحان"}
         </button>
 
+        {/* 🔧 MODIF : boutons ouvrant le HTML */}
         {html && (
-          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
             <button onClick={() => openHtml(html.exam)} style={downloadBtn}>
               📄 عرض الامتحان
             </button>
@@ -180,44 +239,40 @@ export default function Page() {
   );
 }
 
-/* ===== UI helpers ===== */
-
 const downloadBtn: React.CSSProperties = {
   padding: "8px 14px",
   borderRadius: 10,
   background: "rgba(255,255,255,0.12)",
   border: "1px solid rgba(255,255,255,0.25)",
-  color: "#fff",
+  color: "#f1f5f9",
+  fontSize: 12,
+  fontWeight: 600,
 };
-
-const payBtn: React.CSSProperties = {
-  display: "block",
-  textAlign: "center",
-  marginBottom: 10,
-  padding: "12px 0",
-  borderRadius: 14,
-  background: "rgba(59,130,246,0.45)",
-  color: "#fff",
-  textDecoration: "none",
-};
-
-const generateBtn = (disabled: boolean): React.CSSProperties => ({
-  width: "100%",
-  padding: "14px 0",
-  borderRadius: 14,
-  background: disabled ? "rgba(255,255,255,0.22)" : "rgba(59,130,246,0.45)",
-  border: "none",
-  color: "#fff",
-  fontWeight: 700,
-  cursor: disabled ? "not-allowed" : "pointer",
-  marginBottom: 18,
-});
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 20 }}>
-      <strong>{title}</strong>
-      <div>{children}</div>
+    <div
+      style={{
+        padding: 18,
+        borderRadius: 16,
+        background: "rgba(255,255,255,0.055)",
+        border: "1px solid rgba(255,255,255,0.12)",
+        marginBottom: 22,
+      }}
+    >
+      <div
+        style={{
+          display: "inline-block",
+          paddingBottom: 6,
+          marginBottom: 14,
+          borderBottom: "2px solid rgba(255,255,255,0.35)",
+          fontSize: 14,
+          fontWeight: 600,
+        }}
+      >
+        {title}
+      </div>
+      <div style={{ lineHeight: 2 }}>{children}</div>
     </div>
   );
 }
@@ -232,9 +287,8 @@ function Radio({
   onChange: () => void;
 }) {
   return (
-    <label style={{ display: "block" }}>
+    <label style={{ display: "block", cursor: "pointer" }}>
       <input type="radio" checked={checked} onChange={onChange} /> {label}
     </label>
   );
 }
-
