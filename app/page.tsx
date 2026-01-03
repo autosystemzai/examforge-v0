@@ -18,10 +18,19 @@ export default function Page() {
 
   const [selectedPack, setSelectedPack] = useState<Pack>("3");
 
-  // ✅ NEW (UI only): email + placeholder credits
+  // ✅ NEW (UI): email + credits
   const [email, setEmail] = useState("");
-  const [creditsText, setCreditsText] = useState(""); // ✅ was "—"
+  const [creditsText, setCreditsText] = useState("");
   const [checking, setChecking] = useState(false);
+
+  const pdfServiceBase = useMemo(() => {
+    // Railway backend (for credits + webhook). Put this in Vercel env:
+    // NEXT_PUBLIC_PDF_SERVICE_URL=https://examforge-pdf-service-production.up.railway.app
+    return (
+      process.env.NEXT_PUBLIC_PDF_SERVICE_URL ||
+      "https://examforge-pdf-service-production.up.railway.app"
+    );
+  }, []);
 
   const packPricing = useMemo(() => {
     return {
@@ -50,7 +59,7 @@ export default function Page() {
     }
   }, []);
 
-  // ✅ NEW (UI only): load saved email
+  // ✅ load saved email
   useEffect(() => {
     const saved = window.localStorage.getItem("examforge_email") || "";
     if (saved) setEmail(saved);
@@ -61,8 +70,8 @@ export default function Page() {
     return s.includes("@") && s.includes(".");
   }
 
-  // ✅ NEW (UI only): "check" just saves the email + shows placeholder
-  function handleCheckEmail() {
+  // ✅ check credits from Railway backend
+  async function handleCheckEmail() {
     if (busy || checking) return;
     const e = email.trim().toLowerCase();
     if (!isValidEmail(e)) return;
@@ -70,10 +79,46 @@ export default function Page() {
     setChecking(true);
     window.localStorage.setItem("examforge_email", e);
 
-    // placeholder UI (no backend yet)
-    setCreditsText(""); // ✅ was "—"
-    setTimeout(() => setChecking(false), 350);
+    try {
+      const r = await fetch(`${pdfServiceBase}/credits/${encodeURIComponent(e)}`, {
+        method: "GET",
+      });
+
+      const data = await r.json().catch(() => null);
+
+      if (!r.ok || !data || typeof data.credits !== "number") {
+        setCreditsText("");
+        setPaid(false);
+        return;
+      }
+
+      setCreditsText(String(data.credits));
+      setPaid(data.credits > 0);
+    } catch {
+      setCreditsText("");
+      setPaid(false);
+    } finally {
+      setChecking(false);
+    }
   }
+
+  // ✅ auto-check credits if email already saved
+  useEffect(() => {
+    const e = email.trim().toLowerCase();
+    if (!e || !isValidEmail(e)) return;
+
+    (async () => {
+      try {
+        const r = await fetch(`${pdfServiceBase}/credits/${encodeURIComponent(e)}`);
+        const data = await r.json().catch(() => null);
+        if (r.ok && data && typeof data.credits === "number") {
+          setCreditsText(String(data.credits));
+          setPaid(data.credits > 0);
+        }
+      } catch {}
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email, pdfServiceBase]);
 
   async function handleGenerate() {
     if (!file || busy || !paid) return;
@@ -283,7 +328,7 @@ export default function Page() {
           ) : null}
         </div>
 
-        {/* ✅ NEW: Email block (UI only) */}
+        {/* Email block (now real: reads credits from backend) */}
         <div
           style={{
             padding: 16,
