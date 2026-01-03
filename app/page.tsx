@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Difficulty = "easy" | "medium" | "hard";
 type QcmMode = "single" | "multiple";
+type Pack = "3" | "10" | "30";
 
 export default function Page() {
   const [file, setFile] = useState<File | null>(null);
@@ -13,12 +14,34 @@ export default function Page() {
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [qcmMode, setQcmMode] = useState<QcmMode>("single");
 
-  // 🔧 MODIF : on stocke du HTML au lieu de liens
-  const [html, setHtml] = useState<{ exam: string; correction: string } | null>(
-    null
-  );
+  const [html, setHtml] = useState<{ exam: string; correction: string } | null>(null);
 
-  // ✅ Détection du retour Payhip
+  const [selectedPack, setSelectedPack] = useState<Pack>("3");
+
+  // ✅ NEW (UI only): email + placeholder credits
+  const [email, setEmail] = useState("");
+  const [creditsText, setCreditsText] = useState(""); // ✅ was "—"
+  const [checking, setChecking] = useState(false);
+
+  const packPricing = useMemo(() => {
+    return {
+      "3": { price: 5, per: 2.0, label: "3 امتحانات" },
+      "10": { price: 12, per: 1.8, label: "10 امتحانات" },
+      "30": { price: 24, per: 1.5, label: "30 امتحانات" },
+    } as Record<Pack, { price: number; per: number; label: string }>;
+  }, []);
+
+  const payhipLinks = useMemo(() => {
+    const fallback = "https://payhip.com/b/06TAx";
+    return {
+      "3": process.env.NEXT_PUBLIC_PAYHIP_PACK_3_URL || fallback,
+      "10": process.env.NEXT_PUBLIC_PAYHIP_PACK_10_URL || fallback,
+      "30": process.env.NEXT_PUBLIC_PAYHIP_PACK_30_URL || fallback,
+    } as Record<Pack, string>;
+  }, []);
+
+  const payUrl = payhipLinks[selectedPack];
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("paid") === "1") {
@@ -26,6 +49,31 @@ export default function Page() {
       window.history.replaceState({}, "", "/");
     }
   }, []);
+
+  // ✅ NEW (UI only): load saved email
+  useEffect(() => {
+    const saved = window.localStorage.getItem("examforge_email") || "";
+    if (saved) setEmail(saved);
+  }, []);
+
+  function isValidEmail(v: string) {
+    const s = v.trim();
+    return s.includes("@") && s.includes(".");
+  }
+
+  // ✅ NEW (UI only): "check" just saves the email + shows placeholder
+  function handleCheckEmail() {
+    if (busy || checking) return;
+    const e = email.trim().toLowerCase();
+    if (!isValidEmail(e)) return;
+
+    setChecking(true);
+    window.localStorage.setItem("examforge_email", e);
+
+    // placeholder UI (no backend yet)
+    setCreditsText(""); // ✅ was "—"
+    setTimeout(() => setChecking(false), 350);
+  }
 
   async function handleGenerate() {
     if (!file || busy || !paid) return;
@@ -65,7 +113,6 @@ export default function Page() {
       const c7 = await r3.json();
       if (c7.status !== "OK") throw new Error(c7.message);
 
-      // 🔧 MODIF : on récupère le HTML
       setHtml({
         exam: c7.examHtml,
         correction: c7.correctionHtml,
@@ -77,7 +124,6 @@ export default function Page() {
     }
   }
 
-  // 🔧 MODIF : ouverture HTML dans nouvel onglet
   function openHtml(html: string) {
     const w = window.open("", "_blank");
     if (!w) return;
@@ -85,6 +131,8 @@ export default function Page() {
     w.document.write(html);
     w.document.close();
   }
+
+  const selectedInfo = packPricing[selectedPack];
 
   return (
     <main
@@ -116,17 +164,205 @@ export default function Page() {
             background: "rgba(255,255,255,0.06)",
             border: "1px solid rgba(255,255,255,0.12)",
             textAlign: "center",
-            marginBottom: 28,
+            marginBottom: 18,
           }}
         >
           <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
-            منصة إنشاء اختبارات (QCM)
+            منصة إنشاء امتحانات (QCM)
           </h1>
+        </div>
+
+        {/* Payment */}
+        <div
+          style={{
+            padding: 18,
+            borderRadius: 16,
+            background: "rgba(255,255,255,0.055)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            marginBottom: 22,
+          }}
+        >
+          <div
+            style={{
+              display: "inline-block",
+              paddingBottom: 6,
+              marginBottom: 10,
+              borderBottom: "2px solid rgba(255,255,255,0.35)",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            اختر العرض
+          </div>
+
+          {/* ✅ PDF note */}
+          <div
+            style={{
+              width: "fit-content",
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.045)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              color: "rgba(255,255,255,0.72)",
+              fontSize: 11,
+              fontWeight: 650,
+              margin: "0 auto 12px auto",
+              textAlign: "center",
+              lineHeight: 1.4,
+            }}
+          >
+            <span>الخدمة تعمل مع ملفات PDF نصية فقط</span>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            {/* offers container width fixed (buttons become narrower) */}
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <div style={{ width: 280 }}>
+                <OfferRow
+                  pack="3"
+                  selectedPack={selectedPack}
+                  onSelect={setSelectedPack}
+                  label={packPricing["3"].label}
+                  price={`$${packPricing["3"].price}`}
+                />
+                <OfferRow
+                  pack="10"
+                  selectedPack={selectedPack}
+                  onSelect={setSelectedPack}
+                  label={packPricing["10"].label}
+                  price={`$${packPricing["10"].price}`}
+                />
+                <OfferRow
+                  pack="30"
+                  selectedPack={selectedPack}
+                  onSelect={setSelectedPack}
+                  label={packPricing["30"].label}
+                  price={`$${packPricing["30"].price}`}
+                />
+              </div>
+            </div>
+
+            <a
+              href={payUrl}
+              style={{
+                display: "block",
+                width: 280,
+                padding: "9px 0",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(59,130,246,0.45)",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 700,
+                textAlign: "center",
+                textDecoration: "none",
+                pointerEvents: busy ? "none" : "auto",
+                opacity: busy ? 0.6 : 1,
+                margin: "10px auto 0 auto",
+              }}
+            >
+              الدفع الآن ({selectedInfo.label})
+            </a>
+
+            <div
+              style={{
+                textAlign: "center",
+                fontSize: 12,
+                color: "rgba(255,255,255,0.75)",
+                marginTop: 10,
+              }}
+            >
+              🔒 دفع آمن – الرجوع مباشرة بعد الدفع
+            </div>
+          </div>
+
+          {paid ? (
+            <div style={{ textAlign: "center", fontSize: 12, color: "#86efac", fontWeight: 700 }}>
+              ✅ تم الدفع
+            </div>
+          ) : null}
+        </div>
+
+        {/* ✅ NEW: Email block (UI only) */}
+        <div
+          style={{
+            padding: 16,
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.055)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            marginBottom: 18,
+          }}
+        >
+          <div
+            style={{
+              display: "inline-block",
+              paddingBottom: 5,
+              marginBottom: 10,
+              borderBottom: "2px solid rgba(255,255,255,0.35)",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            البريد الإلكتروني
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="example@email.com"
+              inputMode="email"
+              style={{
+                flex: 1,
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: "rgba(255,255,255,0.04)",
+                color: "#fff",
+                outline: "none",
+                fontSize: 13,
+                direction: "ltr",
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={handleCheckEmail}
+              disabled={!isValidEmail(email) || busy || checking}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(255,255,255,0.08)",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: !isValidEmail(email) || busy || checking ? "not-allowed" : "pointer",
+                opacity: !isValidEmail(email) || busy || checking ? 0.6 : 1,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {checking ? "..." : "تحقق"}
+            </button>
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.75)" }}>
+            استخدم نفس البريد الإلكتروني الذي تم الدفع به
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: "#fff" }}>
+            الرصيد المتبقي: {creditsText}
+            {email.trim() ? " امتحان" : ""}
+          </div>
         </div>
 
         <Section title="مستوى الصعوبة :">
           <Radio label="سهل" checked={difficulty === "easy"} onChange={() => setDifficulty("easy")} />
-          <Radio label="متوسط" checked={difficulty === "medium"} onChange={() => setDifficulty("medium")} />
+          <Radio
+            label="متوسط"
+            checked={difficulty === "medium"}
+            onChange={() => setDifficulty("medium")}
+          />
           <Radio label="صعب" checked={difficulty === "hard"} onChange={() => setDifficulty("hard")} />
         </Section>
 
@@ -154,7 +390,10 @@ export default function Page() {
               cursor: "pointer",
               fontSize: 13,
               fontWeight: 600,
+              opacity: paid ? 1 : 0.6,
+              pointerEvents: paid ? "auto" : "none",
             }}
+            title={!paid ? "يرجى الدفع أولاً" : undefined}
           >
             📤 تحميل ملف الدرس
             <input
@@ -165,42 +404,7 @@ export default function Page() {
             />
           </label>
 
-          <div style={{ marginTop: 8, fontSize: 12 }}>
-            {file ? file.name : "لم يتم اختيار أي ملف"}
-          </div>
-        </div>
-
-        <a
-          href="https://payhip.com/b/06TAx"
-          style={{
-            display: "block",
-            width: "100%",
-            padding: "12px 0",
-            borderRadius: 14,
-            border: "1px solid rgba(255,255,255,0.15)",
-            background: "rgba(59,130,246,0.45)",
-            color: "#fff",
-            fontSize: 14,
-            fontWeight: 600,
-            textAlign: "center",
-            textDecoration: "none",
-            marginBottom: 8,
-            pointerEvents: busy ? "none" : "auto",
-            opacity: busy ? 0.6 : 1,
-          }}
-        >
-          الدفع ($2)
-        </a>
-
-        <div
-          style={{
-            textAlign: "center",
-            fontSize: 12,
-            color: "rgba(255,255,255,0.75)",
-            marginBottom: 18,
-          }}
-        >
-          🔒 دفع آمن – الرجوع مباشرة بعد الدفع
+          <div style={{ marginTop: 8, fontSize: 12 }}>{file ? file.name : "لم يتم اختيار أي ملف"}</div>
         </div>
 
         <button
@@ -211,8 +415,7 @@ export default function Page() {
             padding: "14px 0",
             borderRadius: 14,
             border: "1px solid rgba(255,255,255,0.15)",
-            background:
-              !paid || busy ? "rgba(255,255,255,0.22)" : "rgba(59,130,246,0.45)",
+            background: !paid || busy ? "rgba(255,255,255,0.22)" : "rgba(59,130,246,0.45)",
             color: "#fff",
             fontSize: 14,
             fontWeight: 700,
@@ -223,7 +426,6 @@ export default function Page() {
           {busy ? "⏳ جاري إنشاء الامتحان..." : "إنشاء الامتحان"}
         </button>
 
-        {/* 🔧 MODIF : boutons ouvrant le HTML */}
         {html && (
           <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
             <button onClick={() => openHtml(html.exam)} style={downloadBtn}>
@@ -236,6 +438,90 @@ export default function Page() {
         )}
       </div>
     </main>
+  );
+}
+
+function OfferRow({
+  pack,
+  selectedPack,
+  onSelect,
+  label,
+  price,
+}: {
+  pack: Pack;
+  selectedPack: Pack;
+  onSelect: (p: Pack) => void;
+  label: string;
+  price: string;
+}) {
+  const active = selectedPack === pack;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(pack)}
+      style={{
+        width: "100%",
+        display: "block",
+        margin: "0 0 8px 0",
+        padding: "9px 12px",
+        borderRadius: 12,
+        border: active ? "1px solid rgba(59,130,246,0.85)" : "1px solid rgba(255,255,255,0.14)",
+        background: active ? "rgba(59,130,246,0.16)" : "rgba(255,255,255,0.035)",
+        color: "#fff",
+        cursor: "pointer",
+      }}
+      aria-pressed={active}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 12,
+            height: 12,
+            borderRadius: 999,
+            border: active ? "3px solid rgba(59,130,246,0.95)" : "2px solid rgba(255,255,255,0.55)",
+            boxSizing: "border-box",
+            flex: "0 0 12px",
+          }}
+        />
+
+        <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 240,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 700, textAlign: "right" }}>{label}</span>
+
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 900,
+                textAlign: "left",
+                direction: "ltr",
+                unicodeBidi: "isolate",
+                minWidth: 52,
+              }}
+            >
+              {price}
+            </span>
+          </div>
+        </div>
+
+        <input
+          type="radio"
+          name="pack"
+          checked={active}
+          onChange={() => onSelect(pack)}
+          style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
+        />
+      </div>
+    </button>
   );
 }
 
@@ -253,41 +539,33 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div
       style={{
-        padding: 18,
-        borderRadius: 16,
+        padding: 16,
+        borderRadius: 14,
         background: "rgba(255,255,255,0.055)",
         border: "1px solid rgba(255,255,255,0.12)",
-        marginBottom: 22,
+        marginBottom: 18,
       }}
     >
       <div
         style={{
           display: "inline-block",
-          paddingBottom: 6,
-          marginBottom: 14,
+          paddingBottom: 5,
+          marginBottom: 10,
           borderBottom: "2px solid rgba(255,255,255,0.35)",
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: 600,
         }}
       >
         {title}
       </div>
-      <div style={{ lineHeight: 2 }}>{children}</div>
+      <div style={{ lineHeight: 1.8 }}>{children}</div>
     </div>
   );
 }
 
-function Radio({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: () => void;
-}) {
+function Radio({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
   return (
-    <label style={{ display: "block", cursor: "pointer" }}>
+    <label style={{ display: "block", cursor: "pointer", fontSize: 13 }}>
       <input type="radio" checked={checked} onChange={onChange} /> {label}
     </label>
   );
