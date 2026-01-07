@@ -395,9 +395,9 @@ export default function Page() {
             استخدم نفس البريد الإلكتروني الذي تم الدفع به
           </div>
 
+          {/* ✅ CHANGED: removed "امتحان" suffix */}
           <div style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: "#fff" }}>
             الرصيد المتبقي: {creditsText}
-            {email.trim() ? " امتحان" : ""}
           </div>
         </div>
 
