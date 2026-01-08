@@ -12,13 +12,15 @@ export async function POST(req: Request) {
     const file = formData.get("file");
 
     if (!file || !(file instanceof File)) {
-      return Response.json(
-        { status: "ERROR", message: "NO_FILE" },
-        { status: 400 }
-      );
+      return Response.json({ status: "ERROR", message: "NO_FILE" }, { status: 400 });
     }
 
-    const pdfServiceUrl = process.env.PDF_SERVICE_URL;
+    // ✅ FIX: accept server-side var + fallback to NEXT_PUBLIC
+    const pdfServiceUrl =
+      process.env.PDF_SERVICE_URL ||
+      process.env.NEXT_PUBLIC_PDF_SERVICE_URL ||
+      "";
+
     if (!pdfServiceUrl) {
       return Response.json(
         { status: "ERROR", message: "PDF_SERVICE_URL_MISSING" },
@@ -28,11 +30,12 @@ export async function POST(req: Request) {
 
     // Forward vers Railway PDF service
     const fd = new FormData();
-    fd.append("file", file);
+    fd.append("file", file, file.name); // ✅ keep filename
 
     const res = await fetch(`${pdfServiceUrl}/extract-text`, {
       method: "POST",
       body: fd,
+      cache: "no-store",
     });
 
     const text = await res.text();
@@ -44,7 +47,7 @@ export async function POST(req: Request) {
       );
     }
 
-    let data;
+    let data: any;
     try {
       data = JSON.parse(text);
     } catch {
@@ -58,7 +61,7 @@ export async function POST(req: Request) {
       );
     }
 
-    return Response.json(data);
+    return Response.json(data, { status: 200 });
   } catch (e: any) {
     return Response.json(
       { status: "ERROR", message: e?.message || "EXTRACT_FAILED" },
@@ -68,7 +71,8 @@ export async function POST(req: Request) {
 }
 
 /**
- * OPTIONS — nécessaire pour le preflight (FormData + POST)
+ * OPTIONS — pas nécessaire ici (même origine: localhost -> localhost),
+ * mais on le laisse.
  */
 export async function OPTIONS() {
   return new Response(null, {

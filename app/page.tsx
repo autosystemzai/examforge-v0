@@ -129,53 +129,80 @@ export default function Page() {
   }, [email, pdfServiceBase]);
 
   async function handleGenerate() {
-    if (!file || busy || !hasCredits) return;
+  if (!file || busy || !hasCredits) return;
 
-    try {
-      setBusy(true);
-      setHtml(null);
+  const e = email.trim().toLowerCase();
+  if (!isValidEmail(e)) return;
 
-      const fd = new FormData();
-      fd.append("file", file);
+  try {
+    setBusy(true);
+    setHtml(null);
 
-      const r1 = await fetch("/api/extract-text", { method: "POST", body: fd });
-      const c5 = await r1.json();
-      if (c5.status !== "OK") throw new Error(c5.message);
+    // ✅ consume 1 credit (Railway)
+    const rUse = await fetch(`${pdfServiceBase}/credits/use`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: e }),
+    });
 
-      const r2 = await fetch("/api/generate-qcm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cleanedText: c5.cleanedText,
-          difficulty,
-          options: {
-            singleAnswer: qcmMode === "single",
-            multipleAnswers: qcmMode === "multiple",
-            allowNoCorrect: true,
-          },
-        }),
-      });
-      const c6 = await r2.json();
-      if (c6.status !== "OK") throw new Error(c6.message);
+    const useData = await rUse.json().catch(() => null);
 
-      const r3 = await fetch("/api/generate-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questions: c6.data.questions }),
-      });
-      const c7 = await r3.json();
-      if (c7.status !== "OK") throw new Error(c7.message);
-
-      setHtml({
-        exam: c7.examHtml,
-        correction: c7.correctionHtml,
-      });
-    } catch (e: any) {
-      alert(e?.message || "حدث خطأ غير متوقع");
-    } finally {
-      setBusy(false);
+    if (!rUse.ok || !useData?.ok) {
+      // no credits or error
+      setHasCredits(false);
+      setCreditsText("0");
+      throw new Error(useData?.error || "NO_CREDITS");
     }
+
+    // update UI credits immediately
+    const newCredits = Number(useData?.credits);
+    const safeCredits = Number.isFinite(newCredits) ? newCredits : 0;
+    setCreditsText(String(safeCredits));
+    setHasCredits(safeCredits > 0);
+
+    // ✅ continue generation
+    const fd = new FormData();
+    fd.append("file", file);
+
+    const r1 = await fetch("/api/extract-text", { method: "POST", body: fd });
+    const c5 = await r1.json();
+    if (c5.status !== "OK") throw new Error(c5.message);
+
+    const r2 = await fetch("/api/generate-qcm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cleanedText: c5.cleanedText,
+        difficulty,
+        options: {
+          singleAnswer: qcmMode === "single",
+          multipleAnswers: qcmMode === "multiple",
+          allowNoCorrect: true,
+        },
+      }),
+    });
+    const c6 = await r2.json();
+    if (c6.status !== "OK") throw new Error(c6.message);
+
+    const r3 = await fetch("/api/generate-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questions: c6.data.questions }),
+    });
+    const c7 = await r3.json();
+    if (c7.status !== "OK") throw new Error(c7.message);
+
+    setHtml({
+      exam: c7.examHtml,
+      correction: c7.correctionHtml,
+    });
+  } catch (e: any) {
+    alert(e?.message || "حدث خطأ غير متوقع");
+  } finally {
+    setBusy(false);
   }
+}
+
 
   function openHtml(html: string) {
     const w = window.open("", "_blank");
