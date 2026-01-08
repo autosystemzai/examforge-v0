@@ -9,7 +9,9 @@ type Pack = "3" | "10" | "30";
 export default function Page() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [paid, setPaid] = useState(false);
+  const [paidBanner, setPaidBanner] = useState(false); // فقط للعرض
+  const [hasCredits, setHasCredits] = useState(false); // للحقيقة (credits DB)
+
 
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [qcmMode, setQcmMode] = useState<QcmMode>("single");
@@ -52,12 +54,14 @@ export default function Page() {
   const payUrl = payhipLinks[selectedPack];
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("paid") === "1") {
-      setPaid(true);
-      window.history.replaceState({}, "", "/");
-    }
-  }, []);
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("paid") === "1") {
+    setPaidBanner(true);
+    // on enlève le param, mais on garde le badge
+    window.history.replaceState({}, "", "/");
+  }
+}, []);
+
 
   // ✅ load saved email
   useEffect(() => {
@@ -72,35 +76,36 @@ export default function Page() {
 
   // ✅ check credits from Railway backend
   async function handleCheckEmail() {
-    if (busy || checking) return;
-    const e = email.trim().toLowerCase();
-    if (!isValidEmail(e)) return;
+  if (busy || checking) return;
+  const e = email.trim().toLowerCase();
+  if (!isValidEmail(e)) return;
 
-    setChecking(true);
-    window.localStorage.setItem("examforge_email", e);
+  setChecking(true);
+  window.localStorage.setItem("examforge_email", e);
 
-    try {
-      const r = await fetch(`${pdfServiceBase}/credits/${encodeURIComponent(e)}`, {
-        method: "GET",
-      });
+  try {
+    const r = await fetch(`${pdfServiceBase}/credits/${encodeURIComponent(e)}`, {
+      method: "GET",
+      cache: "no-store",
+    });
 
-      const data = await r.json().catch(() => null);
+    const data = await r.json().catch(() => null);
 
-      if (!r.ok || !data || typeof data.credits !== "number") {
-        setCreditsText("");
-        setPaid(false);
-        return;
-      }
+    const credits = Number(data?.credits);
+    const safeCredits = Number.isFinite(credits) ? credits : 0;
 
-      setCreditsText(String(data.credits));
-      setPaid(data.credits > 0);
-    } catch {
-      setCreditsText("");
-      setPaid(false);
-    } finally {
-      setChecking(false);
-    }
+    setCreditsText(String(safeCredits));
+    setHasCredits(safeCredits > 0);
+
+    // IMPORTANT: ne jamais faire setPaidBanner(false) ici
+  } catch {
+    setCreditsText("");
+    setHasCredits(false);
+  } finally {
+    setChecking(false);
   }
+}
+
 
   // ✅ auto-check credits if email already saved
   useEffect(() => {
@@ -111,17 +116,20 @@ export default function Page() {
       try {
         const r = await fetch(`${pdfServiceBase}/credits/${encodeURIComponent(e)}`);
         const data = await r.json().catch(() => null);
-        if (r.ok && data && typeof data.credits === "number") {
-          setCreditsText(String(data.credits));
-          setPaid(data.credits > 0);
-        }
+        if (r.ok && data) {
+  const credits = Number(data?.credits);
+  const safeCredits = Number.isFinite(credits) ? credits : 0;
+  setCreditsText(String(safeCredits));
+  setHasCredits(safeCredits > 0);
+}
+
       } catch {}
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, pdfServiceBase]);
 
   async function handleGenerate() {
-    if (!file || busy || !paid) return;
+    if (!file || busy || !hasCredits) return;
 
     try {
       setBusy(true);
@@ -321,7 +329,7 @@ export default function Page() {
             </div>
           </div>
 
-          {paid ? (
+          {hasCredits ? (
             <div style={{ textAlign: "center", fontSize: 12, color: "#86efac", fontWeight: 700 }}>
               ✅ تم الدفع
             </div>
@@ -435,10 +443,10 @@ export default function Page() {
               cursor: "pointer",
               fontSize: 13,
               fontWeight: 600,
-              opacity: paid ? 1 : 0.6,
-              pointerEvents: paid ? "auto" : "none",
+              opacity: hasCredits ? 1 : 0.6,
+              pointerEvents: hasCredits ? "auto" : "none",
             }}
-            title={!paid ? "يرجى الدفع أولاً" : undefined}
+            title={!hasCredits ? "يرجى الدفع أولاً" : undefined}
           >
             📤 تحميل ملف الدرس
             <input
@@ -454,17 +462,17 @@ export default function Page() {
 
         <button
           onClick={handleGenerate}
-          disabled={!file || busy || !paid}
+          disabled={!file || busy || !hasCredits}
           style={{
             width: "100%",
             padding: "14px 0",
             borderRadius: 14,
             border: "1px solid rgba(255,255,255,0.15)",
-            background: !paid || busy ? "rgba(255,255,255,0.22)" : "rgba(59,130,246,0.45)",
+            background: !hasCredits || busy ? "rgba(255,255,255,0.22)" : "rgba(59,130,246,0.45)",
             color: "#fff",
             fontSize: 14,
             fontWeight: 700,
-            cursor: !paid || busy ? "not-allowed" : "pointer",
+            cursor: !hasCredits || busy ? "not-allowed" : "pointer",
             marginBottom: 20,
           }}
         >
