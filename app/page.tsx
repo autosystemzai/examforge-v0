@@ -357,11 +357,12 @@ export default function Page() {
             </div>
           </div>
 
-          {hasCredits ? (
-            <div style={{ textAlign: "center", fontSize: 12, color: "#86efac", fontWeight: 700 }}>
-              ✅ تم الدفع
-            </div>
-          ) : null}
+          {paidBanner ? (
+  <div style={{ textAlign: "center", fontSize: 12, color: "#86efac", fontWeight: 700 }}>
+    ✅ تم الدفع
+  </div>
+) : null}
+
         </div>
 
         {/* Email block (now real: reads credits from backend) */}
