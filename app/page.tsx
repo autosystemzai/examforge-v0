@@ -63,13 +63,6 @@ export default function Page() {
   }
 }, []);
 
-
-  // ✅ load saved email
-  useEffect(() => {
-    const saved = window.localStorage.getItem("examforge_email") || "";
-    if (saved) setEmail(saved);
-  }, []);
-
   function isValidEmail(v: string) {
     const s = v.trim();
     return s.includes("@") && s.includes(".");
@@ -82,7 +75,6 @@ export default function Page() {
   if (!isValidEmail(e)) return;
 
   setChecking(true);
-  window.localStorage.setItem("examforge_email", e);
 
   try {
     const r = await fetch(`${pdfServiceBase}/credits/${encodeURIComponent(e)}`, {
