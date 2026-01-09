@@ -26,13 +26,14 @@ export default function Page() {
   const [checking, setChecking] = useState(false);
 
   const pdfServiceBase = useMemo(() => {
-    // Railway backend (for credits + webhook). Put this in Vercel env:
-    // NEXT_PUBLIC_PDF_SERVICE_URL=https://examforge-pdf-service-production.up.railway.app
-    return (
-      process.env.NEXT_PUBLIC_PDF_SERVICE_URL ||
-      "https://examforge-pdf-service-production.up.railway.app"
-    );
-  }, []);
+  const base =
+    process.env.NEXT_PUBLIC_PDF_SERVICE_URL ||
+    "https://examforge-pdf-service-production.up.railway.app";
+
+  // ✅ remove trailing slashes to avoid //credits/...
+  return base.replace(/\/+$/, "");
+}, []);
+
 
   const packPricing = useMemo(() => {
     return {
