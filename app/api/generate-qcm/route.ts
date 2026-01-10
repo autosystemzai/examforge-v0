@@ -25,6 +25,9 @@ const TARGET_QUESTIONS = 20;
 const PROMPT_QUESTIONS = 30;
 const USED_TEXT_MAX_CHARS = 9000;
 
+// ✅ NEW: chunking to force coverage (pure text OK)
+const CHUNKS = 5;
+
 /* ================= HELPERS ================= */
 
 function arabicDifficulty(d: Difficulty) {
@@ -123,6 +126,43 @@ function shuffleQuestion(q: QCMQuestion): QCMQuestion {
   return { ...q, choices: newChoices, correctIndex: newCorrect };
 }
 
+/* ================= NEW: TEXT CHUNKING ================= */
+
+function splitIntoChunks(text: string, chunks: number) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (t.length < 2500) return [t];
+
+  const target = Math.ceil(t.length / chunks);
+  const out: string[] = [];
+
+  let i = 0;
+  while (i < t.length && out.length < chunks) {
+    let end = Math.min(i + target, t.length);
+
+    // try to cut on a natural boundary near end
+    if (end < t.length) {
+      const windowStart = Math.max(i + Math.floor(target * 0.7), i);
+      const windowText = t.slice(windowStart, end);
+      const candidates = ["؟", ".", "!", "؛", ":", "—"];
+      let best = -1;
+      for (const c of candidates) {
+        const pos = windowText.lastIndexOf(c);
+        if (pos > best) best = pos;
+      }
+      if (best !== -1) end = windowStart + best + 1;
+      else {
+        // fallback: avoid mid-word
+        while (end < t.length && t[end] !== " ") end++;
+      }
+    }
+
+    out.push(t.slice(i, end).trim());
+    i = end + 1;
+  }
+
+  return out.filter(Boolean);
+}
+
 /* ================= OPENAI ================= */
 
 async function callOpenAI(prompt: string) {
@@ -142,6 +182,8 @@ async function callOpenAI(prompt: string) {
             "أنت أستاذ جامعي صارم في إعداد الامتحانات.",
             "أرجع JSON صالح فقط بدون أي شرح إضافي.",
             "مهم: لا تجعل الإجابة الصحيحة دائمًا A. وزّع الإجابات بين A/B/C/D بشكل متوازن وعشوائي.",
+            // ✅ NEW: forbid source-referencing phrasing inside questions
+            "ممنوع منعًا باتًا استعمال عبارات مثل: «كما ورد في النص»، «حسب ما جاء في النص»، «في هذا النص/الفقرة/الوثيقة»، أو أي إحالة للمصدر داخل السؤال.",
           ].join("\n"),
         },
         { role: "user", content: prompt },
@@ -175,25 +217,47 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: "ERROR", message: "Options invalides" }, { status: 400 });
     }
 
-    const prompt = `
-أنت أستاذ جامعي مختص في إعداد الامتحانات.
+    // ✅ NEW: build chunks to force coverage across the whole course
+    const parts = splitIntoChunks(text, CHUNKS);
+    const minPerChunk = Math.max(1, Math.floor(PROMPT_QUESTIONS / parts.length) - 1); // ex: 30/5 => >=5-1 => 4
 
-أنشئ ${PROMPT_QUESTIONS} سؤال QCM أكاديمي من النص فقط.
+    const chunkedText = parts
+      .map((p, idx) => `### CHUNK ${idx + 1}/${parts.length}\n${p}`)
+      .join("\n\n");
+
+    const prompt = `
+أنت أستاذ جامعي مختص في إعداد امتحانات QCM أكاديمية (للطلبة).
+
+أنشئ ${PROMPT_QUESTIONS} سؤال QCM من المادة المعطاة.
 
 المستوى: ${arabicDifficulty(difficulty)}
 
 قواعد الإجابات:
 ${buildAnswerRules(options)}
 
-قواعد مهمة جدًا:
-- وزّع الإجابة الصحيحة بين A/B/C/D بشكل متوازن وعشوائي (لا تجعلها دائمًا A).
-- لا تكرر نفس نمط السؤال.
-- تجنب الأسئلة المباشرة أو السطحية.
-- استعمل صياغات تحليلية/تطبيقية/مفاهيمية.
-- استعمل اختيارات طويلة نسبيًا وخادعة (قريبة من الصحيح).
-- لا تضف أي معلومة غير موجودة في النص.
+قواعد جودة صارمة (لا تخالفها):
+1) التغطية الشاملة:
+- المادة مقسّمة داخليًا إلى ${parts.length} أجزاء (CHUNKS) فقط لتسهيل التغطية.
+- يجب أن يكون لديك على الأقل ${minPerChunk} أسئلة مستوحاة من كل CHUNK.
+- ممنوع التركيز على المقدمة فقط: وزّع المواضيع عبر كامل المادة.
 
-تنسيق صارم — JSON فقط:
+2) منع التكرار:
+- ممنوع تكرار نفس الفكرة بصيغ مختلفة.
+- كل سؤال يجب أن يختبر نقطة مختلفة (تعريف/تمييز/تطبيق/تحليل/مقارنة/نقد).
+
+3) منع الإحالة للمصدر:
+- ممنوع داخل السؤال أو الاختيارات أو الشرح استعمال:
+  «كما ورد في النص»، «حسب ما جاء في النص»، «في هذا النص/الفقرة/الوثيقة»، «المادة أعلاه»…
+- اطرح السؤال مباشرة كأنه سؤال امتحان رسمي.
+
+4) اختيارات قوية (Distractors):
+- جميع الاختيارات يجب أن تكون معقولة وقريبة من الصحيح.
+- تجنب الاختيارات الساذجة مثل: «لا توجد علاقة»، «فقط القوانين الأجنبية»، إلخ.
+- استعمل تمييزات دقيقة بين المفاهيم المتقاربة.
+
+5) لا تضف معلومات غير موجودة في المادة.
+
+تنسيق صارم — JSON فقط (بدون Markdown):
 {
   "questions": [
     {
@@ -205,8 +269,8 @@ ${buildAnswerRules(options)}
   ]
 }
 
-النص:
-"""${text}"""
+المادة:
+${chunkedText}
 `.trim();
 
     const raw = await callOpenAI(prompt);
@@ -249,6 +313,9 @@ ${buildAnswerRules(options)}
 
     return NextResponse.json({ status: "OK", data: { questions } });
   } catch (e: any) {
-    return NextResponse.json({ status: "ERROR", message: e.message || "Erreur serveur" }, { status: 500 });
+    return NextResponse.json(
+      { status: "ERROR", message: e.message || "Erreur serveur" },
+      { status: 500 }
+    );
   }
 }
