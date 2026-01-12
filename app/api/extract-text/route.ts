@@ -1,11 +1,19 @@
 export const runtime = "nodejs";
 
-/**
- * POST /api/extract-text
- * - reçoit un PDF (FormData)
- * - forward vers le service PDF Railway
- * - renvoie le JSON parsé
- */
+function trimSlash(s: string) {
+  return s.replace(/\/+$/, "");
+}
+
+function safeJsonParse(text: string) {
+  // Strip code fences just in case
+  const cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  try {
+    return { ok: true as const, data: JSON.parse(cleaned) };
+  } catch {
+    return { ok: false as const, data: null };
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -15,7 +23,6 @@ export async function POST(req: Request) {
       return Response.json({ status: "ERROR", message: "NO_FILE" }, { status: 400 });
     }
 
-    // ✅ FIX: accept server-side var + fallback to NEXT_PUBLIC
     const pdfServiceUrl =
       process.env.PDF_SERVICE_URL ||
       process.env.NEXT_PUBLIC_PDF_SERVICE_URL ||
@@ -28,40 +35,76 @@ export async function POST(req: Request) {
       );
     }
 
+    const url = `${trimSlash(pdfServiceUrl)}/extract-text`;
+
     // Forward vers Railway PDF service
     const fd = new FormData();
-    fd.append("file", file, file.name); // ✅ keep filename
+    fd.append("file", file, file.name);
 
-    const res = await fetch(`${pdfServiceUrl}/extract-text`, {
+    const res = await fetch(url, {
       method: "POST",
       body: fd,
       cache: "no-store",
     });
 
-    const text = await res.text();
+    const contentType = res.headers.get("content-type") || "";
+    const rawText = await res.text();
 
+    // ---- If upstream failed, return structured error without crashing JSON.parse
     if (!res.ok) {
-      return Response.json(
-        { status: "ERROR", message: text || "PDF_SERVICE_ERROR" },
-        { status: 500 }
-      );
-    }
+      // common case: 413 text response like "Request Entity Too Large"
+      const isTooLarge =
+        res.status === 413 ||
+        /request entity too large/i.test(rawText) ||
+        rawText.toLowerCase().startsWith("request en");
 
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch {
       return Response.json(
         {
           status: "ERROR",
-          message: "INVALID_RESPONSE_FROM_PDF_SERVICE",
-          raw: text.slice(0, 300),
+          message: isTooLarge ? "PDF_TOO_LARGE" : "PDF_SERVICE_ERROR",
+          upstreamStatus: res.status,
+          upstreamContentType: contentType,
+          rawPreview: rawText.slice(0, 400),
         },
-        { status: 500 }
+        { status: res.status } // keep upstream status (important!)
       );
     }
 
-    return Response.json(data, { status: 200 });
+    // ---- Upstream OK: try to parse JSON
+    if (contentType.includes("application/json")) {
+      const parsed = safeJsonParse(rawText);
+      if (parsed.ok) {
+        return Response.json(parsed.data, { status: 200 });
+      }
+      // content-type says json but body isn't valid json
+      return Response.json(
+        {
+          status: "ERROR",
+          message: "INVALID_JSON_FROM_PDF_SERVICE",
+          upstreamStatus: res.status,
+          upstreamContentType: contentType,
+          rawPreview: rawText.slice(0, 400),
+        },
+        { status: 502 }
+      );
+    }
+
+    // ---- Upstream returned text/html even though OK (rare but happens with proxies)
+    const parsed = safeJsonParse(rawText);
+    if (parsed.ok) {
+      return Response.json(parsed.data, { status: 200 });
+    }
+
+    return Response.json(
+      {
+        status: "ERROR",
+        message: "NON_JSON_RESPONSE_FROM_PDF_SERVICE",
+        upstreamStatus: res.status,
+        upstreamContentType: contentType,
+        rawPreview: rawText.slice(0, 400),
+      },
+      { status: 502 }
+    );
   } catch (e: any) {
     return Response.json(
       { status: "ERROR", message: e?.message || "EXTRACT_FAILED" },
@@ -70,10 +113,6 @@ export async function POST(req: Request) {
   }
 }
 
-/**
- * OPTIONS — pas nécessaire ici (même origine: localhost -> localhost),
- * mais on le laisse.
- */
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
