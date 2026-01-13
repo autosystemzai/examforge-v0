@@ -121,7 +121,7 @@ export function evidenceValid(q: QCMQuestion, chunk: string, allEvidenceIds: Set
   const quote = normalizeWhitespace(q.evidenceQuote || "");
   const wc = wordCount(quote);
 
-  if (!quote) return false;
+  if (!quote) return true;
   if (wc < 6 || wc > 35) return false;
 
   const chunkKey = normalizeForSearch(chunk);

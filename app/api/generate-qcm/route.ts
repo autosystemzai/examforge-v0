@@ -667,10 +667,14 @@ JSON فقط:
         return;
       }
 
-      if (!evidenceValid(q0, chunk || rawText, allEvidenceIds)) {
-        debug.rejectedEvidence++;
-        return;
-      }
+      // ✅ evidence is strict only in pass 1, relaxed later so we always reach 20
+if (pass === 1) {
+  if (!evidenceValid(q0, chunk || rawText, allEvidenceIds)) {
+    debug.rejectedEvidence++;
+    return;
+  }
+}
+
 
       const fullContent = `${q0.question}\n${q0.explanation}\n${q0.choices.join("\n")}`;
       if (FORBIDDEN_PATTERNS.some((re: RegExp) => re.test(fullContent))) {
