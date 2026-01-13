@@ -12,7 +12,6 @@ export default function Page() {
   const [paidBanner, setPaidBanner] = useState(false); // فقط للعرض
   const [hasCredits, setHasCredits] = useState(false); // للحقيقة (credits DB)
 
-
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [qcmMode, setQcmMode] = useState<QcmMode>("single");
 
@@ -26,14 +25,13 @@ export default function Page() {
   const [checking, setChecking] = useState(false);
 
   const pdfServiceBase = useMemo(() => {
-  const base =
-    process.env.NEXT_PUBLIC_PDF_SERVICE_URL ||
-    "https://examforge-pdf-service-production.up.railway.app";
+    const base =
+      process.env.NEXT_PUBLIC_PDF_SERVICE_URL ||
+      "https://examforge-pdf-service-production.up.railway.app";
 
-  // ✅ remove trailing slashes to avoid //credits/...
-  return base.replace(/\/+$/, "");
-}, []);
-
+    // ✅ remove trailing slashes to avoid //credits/...
+    return base.replace(/\/+$/, "");
+  }, []);
 
   const packPricing = useMemo(() => {
     return {
@@ -55,13 +53,13 @@ export default function Page() {
   const payUrl = payhipLinks[selectedPack];
 
   useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("paid") === "1") {
-    setPaidBanner(true);
-    // on enlève le param, mais on garde le badge
-    window.history.replaceState({}, "", "/");
-  }
-}, []);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("paid") === "1") {
+      setPaidBanner(true);
+      // on enlève le param, mais on garde le badge
+      window.history.replaceState({}, "", "/");
+    }
+  }, []);
 
   function isValidEmail(v: string) {
     const s = v.trim();
@@ -70,35 +68,34 @@ export default function Page() {
 
   // ✅ check credits from Railway backend
   async function handleCheckEmail() {
-  if (busy || checking) return;
-  const e = email.trim().toLowerCase();
-  if (!isValidEmail(e)) return;
+    if (busy || checking) return;
+    const e = email.trim().toLowerCase();
+    if (!isValidEmail(e)) return;
 
-  setChecking(true);
+    setChecking(true);
 
-  try {
-    const r = await fetch(`${pdfServiceBase}/credits/${encodeURIComponent(e)}`, {
-      method: "GET",
-      cache: "no-store",
-    });
+    try {
+      const r = await fetch(`${pdfServiceBase}/credits/${encodeURIComponent(e)}`, {
+        method: "GET",
+        cache: "no-store",
+      });
 
-    const data = await r.json().catch(() => null);
+      const data = await r.json().catch(() => null);
 
-    const credits = Number(data?.credits);
-    const safeCredits = Number.isFinite(credits) ? credits : 0;
+      const credits = Number(data?.credits);
+      const safeCredits = Number.isFinite(credits) ? credits : 0;
 
-    setCreditsText(String(safeCredits));
-    setHasCredits(safeCredits > 0);
+      setCreditsText(String(safeCredits));
+      setHasCredits(safeCredits > 0);
 
-    // IMPORTANT: ne jamais faire setPaidBanner(false) ici
-  } catch {
-    setCreditsText("");
-    setHasCredits(false);
-  } finally {
-    setChecking(false);
+      // IMPORTANT: ne jamais faire setPaidBanner(false) ici
+    } catch {
+      setCreditsText("");
+      setHasCredits(false);
+    } finally {
+      setChecking(false);
+    }
   }
-}
-
 
   // ✅ auto-check credits if email already saved
   useEffect(() => {
@@ -110,92 +107,123 @@ export default function Page() {
         const r = await fetch(`${pdfServiceBase}/credits/${encodeURIComponent(e)}`);
         const data = await r.json().catch(() => null);
         if (r.ok && data) {
-  const credits = Number(data?.credits);
-  const safeCredits = Number.isFinite(credits) ? credits : 0;
-  setCreditsText(String(safeCredits));
-  setHasCredits(safeCredits > 0);
-}
-
+          const credits = Number(data?.credits);
+          const safeCredits = Number.isFinite(credits) ? credits : 0;
+          setCreditsText(String(safeCredits));
+          setHasCredits(safeCredits > 0);
+        }
       } catch {}
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, pdfServiceBase]);
 
   async function handleGenerate() {
-  if (!file || busy || !hasCredits) return;
+    if (!file || busy || !hasCredits) return;
 
-  const e = email.trim().toLowerCase();
-  if (!isValidEmail(e)) return;
+    const e = email.trim().toLowerCase();
+    if (!isValidEmail(e)) return;
 
-  try {
-    setBusy(true);
-    setHtml(null);
-
-    // ✅ consume 1 credit (Railway)
-    const rUse = await fetch(`${pdfServiceBase}/credits/use`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: e }),
-    });
-
-    const useData = await rUse.json().catch(() => null);
-
-    if (!rUse.ok || !useData?.ok) {
-      // no credits or error
-      setHasCredits(false);
-      setCreditsText("0");
-      throw new Error(useData?.error || "NO_CREDITS");
+    // ✅ match pdf-service multer limit (25MB)
+    const MAX_MB = 25;
+    const maxBytes = MAX_MB * 1024 * 1024;
+    if (file.size > maxBytes) {
+      alert(`الملف كبير جداً. الحد الأقصى هو ${MAX_MB}MB`);
+      return;
     }
 
-    // update UI credits immediately
-    const newCredits = Number(useData?.credits);
-    const safeCredits = Number.isFinite(newCredits) ? newCredits : 0;
-    setCreditsText(String(safeCredits));
-    setHasCredits(safeCredits > 0);
+    try {
+      setBusy(true);
+      setHtml(null);
 
-    // ✅ continue generation
-    const fd = new FormData();
-    fd.append("file", file);
+      // ✅ consume 1 credit (Railway)
+      const rUse = await fetch(`${pdfServiceBase}/credits/use`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: e }),
+      });
 
-    const r1 = await fetch("/api/extract-text", { method: "POST", body: fd });
-    const c5 = await r1.json();
-    if (c5.status !== "OK") throw new Error(c5.message);
+      const useData = await rUse.json().catch(() => null);
 
-    const r2 = await fetch("/api/generate-qcm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        cleanedText: c5.cleanedText,
-        difficulty,
-        options: {
-          singleAnswer: qcmMode === "single",
-          multipleAnswers: qcmMode === "multiple",
-          allowNoCorrect: true,
-        },
-      }),
-    });
-    const c6 = await r2.json();
-    if (c6.status !== "OK") throw new Error(c6.message);
+      if (!rUse.ok || !useData?.ok) {
+        setHasCredits(false);
+        setCreditsText("0");
+        throw new Error(useData?.error || "NO_CREDITS");
+      }
 
-    const r3 = await fetch("/api/generate-pdf", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ questions: c6.data.questions }),
-    });
-    const c7 = await r3.json();
-    if (c7.status !== "OK") throw new Error(c7.message);
+      // update UI credits immediately
+      const newCredits = Number(useData?.credits);
+      const safeCredits = Number.isFinite(newCredits) ? newCredits : 0;
+      setCreditsText(String(safeCredits));
+      setHasCredits(safeCredits > 0);
 
-    setHtml({
-      exam: c7.examHtml,
-      correction: c7.correctionHtml,
-    });
-  } catch (e: any) {
-    alert(e?.message || "حدث خطأ غير متوقع");
-  } finally {
-    setBusy(false);
+      // ✅ 1) Upload PDF DIRECTLY to Railway (NO Vercel /api/extract-text)
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+
+      const r1 = await fetch(`${pdfServiceBase}/extract-text`, {
+        method: "POST",
+        body: fd,
+        cache: "no-store",
+      });
+
+      const c5 = await r1.json().catch(() => null);
+
+      if (!r1.ok) {
+        const msg = c5?.message || `PDF_SERVICE_ERROR_${r1.status}`;
+        throw new Error(msg);
+      }
+      if (!c5 || c5.status !== "OK") {
+        throw new Error(c5?.message || "PDF_EXTRACT_FAILED");
+      }
+
+      // ✅ Prefer selectedText (teachability), fallback to cleanedText
+      const textForLLM =
+        typeof c5.selectedText === "string" && c5.selectedText.trim().length > 500
+          ? c5.selectedText
+          : c5.cleanedText;
+
+      if (!textForLLM || String(textForLLM).trim().length < 300) {
+        throw new Error("PDF_TEXT_TOO_SHORT_OR_UNREADABLE");
+      }
+
+      // ✅ 2) Generate QCM (Vercel /api/generate-qcm is fine because it's text, not PDF)
+      const r2 = await fetch("/api/generate-qcm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cleanedText: textForLLM,
+          difficulty,
+          options: {
+            singleAnswer: qcmMode === "single",
+            multipleAnswers: qcmMode === "multiple",
+            allowNoCorrect: true,
+          },
+        }),
+      });
+
+      const c6 = await r2.json().catch(() => null);
+      if (!r2.ok || !c6 || c6.status !== "OK") throw new Error(c6?.message || "QCM_FAILED");
+
+      // ✅ 3) Generate PDF
+      const r3 = await fetch("/api/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions: c6.data.questions }),
+      });
+
+      const c7 = await r3.json().catch(() => null);
+      if (!r3.ok || !c7 || c7.status !== "OK") throw new Error(c7?.message || "PDF_BUILD_FAILED");
+
+      setHtml({
+        exam: c7.examHtml,
+        correction: c7.correctionHtml,
+      });
+    } catch (e: any) {
+      alert(e?.message || "حدث خطأ غير متوقع");
+    } finally {
+      setBusy(false);
+    }
   }
-}
-
 
   function openHtml(html: string) {
     const w = window.open("", "_blank");
@@ -288,7 +316,6 @@ export default function Page() {
           </div>
 
           <div style={{ marginBottom: 10 }}>
-            {/* offers container width fixed (buttons become narrower) */}
             <div style={{ display: "flex", justifyContent: "center" }}>
               <div style={{ width: 280 }}>
                 <OfferRow
@@ -350,14 +377,13 @@ export default function Page() {
           </div>
 
           {paidBanner ? (
-  <div style={{ textAlign: "center", fontSize: 12, color: "#86efac", fontWeight: 700 }}>
-    ✅ تم الدفع
-  </div>
-) : null}
-
+            <div style={{ textAlign: "center", fontSize: 12, color: "#86efac", fontWeight: 700 }}>
+              ✅ تم الدفع
+            </div>
+          ) : null}
         </div>
 
-        {/* Email block (now real: reads credits from backend) */}
+        {/* Email block */}
         <div
           style={{
             padding: 16,
@@ -424,7 +450,6 @@ export default function Page() {
             استخدم نفس البريد الإلكتروني الذي تم الدفع به
           </div>
 
-          {/* ✅ CHANGED: removed "امتحان" suffix */}
           <div style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: "#fff" }}>
             الرصيد المتبقي: {creditsText}
           </div>
