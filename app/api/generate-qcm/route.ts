@@ -1,25 +1,15 @@
 import { NextResponse } from "next/server";
+import {
+  evidenceValid,
+  extractEvidenceIdsFromText,
+  looksLikeTriviaNumber,
+  suspiciousMathQuestion,
+  QCMQuestion,
+  Options,
+  Difficulty,
+} from "./validators";
 
 export const runtime = "nodejs";
-
-/* ================= TYPES ================= */
-
-type Difficulty = "easy" | "medium" | "hard";
-
-type Options = {
-  singleAnswer: boolean;
-  multipleAnswers: boolean;
-  allowNoCorrect: boolean;
-};
-
-type QCMQuestion = {
-  question: string;
-  choices: string[];
-  correctIndex: number | number[] | null;
-  explanation: string;
-};
-
-type RawWithChunk = any & { __chunk?: string };
 
 /* ================= CONSTANTS ================= */
 
@@ -64,7 +54,8 @@ function buildAnswerRules(options: Options) {
     if (options.multipleAnswers) rules.push("قد يحتوي السؤال على عدة إجابات صحيحة (من 1 إلى 3 غالباً).");
   }
 
-  if (options.allowNoCorrect) rules.push("نادرًا جدًا: يمكن أن تكون «لا توجد إجابة صحيحة» هي الإجابة الصحيحة الوحيدة.");
+  if (options.allowNoCorrect)
+    rules.push("نادرًا جدًا: يمكن أن تكون «لا توجد إجابة صحيحة» هي الإجابة الصحيحة الوحيدة.");
   else rules.push("ممنوع جعل «لا توجد إجابة صحيحة» إجابة صحيحة.");
 
   return rules.join("\n");
@@ -214,6 +205,8 @@ const AR_STOPWORDS = new Set([
   "حسب",
 ]);
 
+type RawWithChunk = any & { __chunk?: string };
+
 function stripCodeFences(raw: string) {
   return raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
 }
@@ -241,8 +234,8 @@ function normalizeKey(s: string) {
 function extractTokensArabic(s: string): string[] {
   return normalizeKey(s)
     .split(" ")
-    .map((t) => t.trim())
-    .filter((t) => t.length > 2 && !AR_STOPWORDS.has(t));
+    .map((t: string) => t.trim())
+    .filter((t: string) => t.length > 2 && !AR_STOPWORDS.has(t));
 }
 
 function tokenSet(s: string) {
@@ -258,7 +251,12 @@ function jaccard(a: Set<string>, b: Set<string>) {
 
 function isNoCorrectChoice(s: string) {
   const t = String(s || "").replace(/\s+/g, " ").trim();
-  return t === "لا توجد إجابة صحيحة" || t === "لا توجد إجابة صحيحة." || t === "لا توجد إجابة صحيحة!" || /لا توجد إجابة صحيحة/.test(t);
+  return (
+    t === "لا توجد إجابة صحيحة" ||
+    t === "لا توجد إجابة صحيحة." ||
+    t === "لا توجد إجابة صحيحة!" ||
+    /لا توجد إجابة صحيحة/.test(t)
+  );
 }
 
 function validateAnswerMode(correctIndex: any, options: Options): number | number[] | null {
@@ -303,9 +301,9 @@ function shuffleQuestion(q: QCMQuestion): QCMQuestion {
     [idx[i], idx[j]] = [idx[j], idx[i]];
   }
 
-  const newChoices = idx.map((oldI) => q.choices[oldI]);
+  const newChoices = idx.map((oldI: number) => q.choices[oldI]);
   const mapOldToNew = new Map<number, number>();
-  idx.forEach((oldI, newI) => mapOldToNew.set(oldI, newI));
+  idx.forEach((oldI: number, newI: number) => mapOldToNew.set(oldI, newI));
 
   let newCorrect: number | number[] | null = null;
 
@@ -313,8 +311,8 @@ function shuffleQuestion(q: QCMQuestion): QCMQuestion {
     newCorrect = mapOldToNew.get(q.correctIndex) ?? null;
   } else if (Array.isArray(q.correctIndex)) {
     const mapped = q.correctIndex
-      .map((oldI) => mapOldToNew.get(oldI))
-      .filter((v): v is number => typeof v === "number");
+      .map((oldI: number) => mapOldToNew.get(oldI))
+      .filter((v: number | undefined): v is number => typeof v === "number");
     newCorrect = mapped.length ? Array.from(new Set(mapped)) : null;
   } else {
     newCorrect = null;
@@ -328,16 +326,21 @@ function normalizeOne(raw: any, options: Options): QCMQuestion | null {
 
   const question = String(raw.question || "").trim();
   const explanation = String(raw.explanation || "—").trim();
-  const choices: string[] = Array.isArray(raw.choices) ? raw.choices.map((c: any) => String(c ?? "").trim()).slice(0, 4) : [];
+  const choices: string[] = Array.isArray(raw.choices)
+    ? raw.choices.map((c: any) => String(c ?? "").trim()).slice(0, 4)
+    : [];
 
   if (!question) return null;
   if (choices.length !== 4) return null;
-  if (choices.some((c) => !c)) return null;
+  if (choices.some((c: string) => !c)) return null;
 
   const corrected = validateAnswerMode(raw.correctIndex, options);
   if (corrected === null) return null;
 
-  return { question, choices, correctIndex: corrected, explanation };
+  const evidenceIds = Array.isArray(raw.evidenceIds) ? raw.evidenceIds.map((x: any) => String(x).trim()) : [];
+  const evidenceQuote = String(raw.evidenceQuote || "").trim();
+
+  return { question, choices, correctIndex: corrected, explanation, evidenceIds, evidenceQuote };
 }
 
 /* ================= SMART SAMPLING ================= */
@@ -349,7 +352,7 @@ function getSmartChunks(text: string, k: number): string[] {
     const size = Math.ceil(safeText.length / k);
     const chunks: string[] = [];
     for (let i = 0; i < k; i++) chunks.push(safeText.slice(i * size, (i + 1) * size));
-    return chunks.filter((c) => c.trim().length > 50);
+    return chunks.filter((c: string) => c.trim().length > 50);
   }
 
   const window = Math.min(14000, Math.floor(safeText.length / k));
@@ -361,14 +364,14 @@ function getSmartChunks(text: string, k: number): string[] {
     const start = Math.min(maxStart, i * step);
     chunks.push(safeText.slice(start, start + window));
   }
-  return chunks.filter((c) => c.trim().length > 50);
+  return chunks.filter((c: string) => c.trim().length > 50);
 }
 
 /* ================= GROUNDEDNESS ================= */
 
 function getCorrectChoiceTexts(q: QCMQuestion): string[] {
   if (typeof q.correctIndex === "number") return [q.choices[q.correctIndex] ?? ""].filter(Boolean);
-  if (Array.isArray(q.correctIndex)) return q.correctIndex.map((i) => q.choices[i] ?? "").filter(Boolean);
+  if (Array.isArray(q.correctIndex)) return q.correctIndex.map((i: number) => q.choices[i] ?? "").filter(Boolean);
   return [];
 }
 
@@ -388,7 +391,6 @@ function appearsInChunkEnough(q: QCMQuestion, chunk: string, difficulty: Difficu
   const qOverlap = overlapCount(qTokens, chunkKey);
   const cOverlap = overlapCount(correctTokens, chunkKey);
 
-  // Progressive relaxation
   if (difficulty === "hard") {
     if (pass === 1) return qOverlap >= 4 && cOverlap >= 2;
     if (pass === 2) return qOverlap >= 3 && cOverlap >= 1;
@@ -424,8 +426,8 @@ function choicesGroundedEnough(q: QCMQuestion, chunk: string, difficulty: Diffic
 function themeKey(question: string): string {
   const toks = extractTokensArabic(question);
   const strong = toks
-    .filter((t) => t.length >= 4)
-    .sort((a, b) => b.length - a.length)
+    .filter((t: string) => t.length >= 4)
+    .sort((a: string, b: string) => b.length - a.length)
     .slice(0, 4)
     .sort();
   return strong.join("|");
@@ -441,7 +443,12 @@ function themeCap(difficulty: Difficulty, pass: 1 | 2 | 3) {
 /* ================= QUALITY HEURISTICS ================= */
 
 function hasGiveawayChoices(q: QCMQuestion, difficulty: Difficulty, pass: 1 | 2 | 3): boolean {
-  const hits = q.choices.reduce((acc, c) => acc + (EASY_GIVEAWAY_CHOICE_PATTERNS.some((re) => re.test(c)) ? 1 : 0), 0);
+  const hits = q.choices.reduce(
+    (acc: number, c: string) =>
+      acc + (EASY_GIVEAWAY_CHOICE_PATTERNS.some((re: RegExp) => re.test(c)) ? 1 : 0),
+    0
+  );
+
   if (difficulty === "hard") return pass === 1 ? hits >= 1 : hits >= 2;
   return hits >= 2;
 }
@@ -452,7 +459,6 @@ function isArticleQuestion(q: QCMQuestion): boolean {
 }
 
 function similarityThreshold(difficulty: Difficulty, pass: 1 | 2 | 3) {
-  // Higher threshold = more permissive (reject only when similarity is very high)
   if (difficulty === "hard") return pass === 1 ? 0.66 : pass === 2 ? 0.74 : 0.82;
   if (difficulty === "medium") return pass === 1 ? 0.72 : 0.8;
   return pass === 1 ? 0.74 : 0.82;
@@ -482,6 +488,7 @@ async function callOpenAI(prompt: string) {
             "ممنوع الإحالة للمصدر داخل السؤال/الشرح مثل: «وفقاً للنص/حسب النص/كما ورد/فيما يلي».",
             "ممنوع خيارات: «كل ما سبق/جميع ما سبق/ليس مما ذكر».",
             "جودة المشتتات: جميع الخيارات يجب أن تبدو معقولة ومتقاربة (Near-miss).",
+            "✅ إلزامي: لكل سؤال أضف evidenceIds + evidenceQuote مقتبسة حرفياً من نفس الجزء.",
           ].join("\n"),
         },
         { role: "user", content: prompt },
@@ -489,7 +496,6 @@ async function callOpenAI(prompt: string) {
     }),
   });
 
-  // ✅ Always read text first (handles non-JSON error bodies)
   const text = await res.text();
 
   if (!res.ok) {
@@ -526,6 +532,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: "ERROR", message: "Options invalides" }, { status: 400 });
     }
 
+    const allEvidenceIds = extractEvidenceIdsFromText(rawText);
+
     const singleOnly = options.singleAnswer && !options.multipleAnswers;
     const chunks = getSmartChunks(rawText, CHUNKS);
 
@@ -553,6 +561,10 @@ ${buildAnswerRules(options)}
 - اجعل الخيارات الأربعة تقنية ومأخوذة من مفردات هذا الجزء قدر الإمكان (حتى المشتتات).
 - تجنب الخيارات المتطرفة/الساذجة (دائماً/أبداً/لا شيء/لا علاقة/مطلقاً).
 - لا تُكثر من أسئلة "المادة رقم ..." واجعل التركيز على الحكم لا الرقم.
+- ممنوع أسئلة الحفظ الرقمي البحت (مثل: كم المبلغ/قيمة التركة) إلا إذا كان الرقم جزءاً من قاعدة/حساب داخل النص.
+- ✅ لكل سؤال: 
+  * evidenceIds: قائمة معرفات مثل p03-02 (إذا كانت موجودة في الجزء).
+  * evidenceQuote: اقتباس قصير (10-25 كلمة) من نفس الجزء حرفياً لدعم السؤال والإجابة.
 
 JSON فقط:
 {
@@ -561,7 +573,9 @@ JSON فقط:
       "question": "",
       "choices": ["", "", "", ""],
       "correctIndex": ${singleOnly ? "0" : "0 | [0,1]"},
-      "explanation": "تعليل مختصر ودقيق بدون إحالة للنص"
+      "explanation": "تعليل مختصر ودقيق بدون إحالة للنص",
+      "evidenceIds": ["p03-02"],
+      "evidenceQuote": ""
     }
   ]
 }
@@ -573,7 +587,7 @@ JSON فقط:
       try {
         const raw = await callOpenAI(prompt);
         const parsed = safeJsonParse(raw);
-        const list = Array.isArray(parsed?.questions) ? parsed.questions : [];
+        const list: any[] = Array.isArray(parsed?.questions) ? parsed.questions : [];
         for (const item of list) allRawQuestions.push({ ...item, __chunk: text });
       } catch {
         continue;
@@ -606,10 +620,15 @@ JSON فقط:
       rejectedSimilar: 0,
       rejectedTheme: 0,
       rejectedArticleCap: 0,
+
+      // ✅ NEW
+      rejectedEvidence: 0,
+      rejectedTrivia: 0,
+      rejectedSuspiciousMath: 0,
     };
 
     function violatesNoCorrectRule(q: QCMQuestion): boolean {
-      const idxNC = q.choices.findIndex((c) => isNoCorrectChoice(c));
+      const idxNC = q.choices.findIndex((c: string) => isNoCorrectChoice(c));
       if (idxNC === -1) return false;
 
       if (!options.allowNoCorrect) return true;
@@ -638,8 +657,23 @@ JSON فقط:
       const q0 = normalizeOne(raw, options);
       if (!q0) return;
 
+      if (looksLikeTriviaNumber(q0.question, q0.choices)) {
+        debug.rejectedTrivia++;
+        return;
+      }
+
+      if (suspiciousMathQuestion(q0.question, q0.choices)) {
+        debug.rejectedSuspiciousMath++;
+        return;
+      }
+
+      if (!evidenceValid(q0, chunk || rawText, allEvidenceIds)) {
+        debug.rejectedEvidence++;
+        return;
+      }
+
       const fullContent = `${q0.question}\n${q0.explanation}\n${q0.choices.join("\n")}`;
-      if (FORBIDDEN_PATTERNS.some((re) => re.test(fullContent))) {
+      if (FORBIDDEN_PATTERNS.some((re: RegExp) => re.test(fullContent))) {
         debug.rejectedForbidden++;
         return;
       }
@@ -659,7 +693,6 @@ JSON فقط:
         return;
       }
 
-      // Dynamic cap: do NOT block articles if we’re under 10 accepted yet
       const isArt = isArticleQuestion(q0);
       if (isArt && final.length >= 10 && articleQuestionsUsed >= articleCap(pass)) {
         debug.rejectedArticleCap++;
@@ -668,37 +701,37 @@ JSON فقط:
 
       if (difficulty === "hard") {
         if (pass === 1) {
-          if (DEFINITION_STEMS.some((re) => re.test(q0.question))) {
+          if (DEFINITION_STEMS.some((re: RegExp) => re.test(q0.question))) {
             debug.rejectedHardRules++;
             return;
           }
-          if (GENERIC_HARD_STEMS.some((re) => re.test(q0.question))) {
+          if (GENERIC_HARD_STEMS.some((re: RegExp) => re.test(q0.question))) {
             debug.rejectedHardRules++;
             return;
           }
-          if (!HARD_MARKERS.some((re) => re.test(q0.question))) {
+          if (!HARD_MARKERS.some((re: RegExp) => re.test(q0.question))) {
             debug.rejectedHardRules++;
             return;
           }
         }
 
         if (pass === 2) {
-          if (GENERIC_HARD_STEMS.some((re) => re.test(q0.question))) {
+          if (GENERIC_HARD_STEMS.some((re: RegExp) => re.test(q0.question))) {
             debug.rejectedHardRules++;
             return;
           }
-          if (DEFINITION_STEMS.some((re) => re.test(q0.question)) && q0.question.length < 110) {
+          if (DEFINITION_STEMS.some((re: RegExp) => re.test(q0.question)) && q0.question.length < 110) {
             debug.rejectedHardRules++;
             return;
           }
         }
 
         if (pass === 3) {
-          if (GENERIC_HARD_STEMS.some((re) => re.test(q0.question))) {
+          if (GENERIC_HARD_STEMS.some((re: RegExp) => re.test(q0.question))) {
             debug.rejectedHardRules++;
             return;
           }
-          if (DEFINITION_STEMS.some((re) => re.test(q0.question)) && q0.question.length < 95) {
+          if (DEFINITION_STEMS.some((re: RegExp) => re.test(q0.question)) && q0.question.length < 95) {
             debug.rejectedHardRules++;
             return;
           }
@@ -716,7 +749,6 @@ JSON فقط:
         return;
       }
 
-      // Theme anti-repeat
       const tKey = themeKey(q0.question);
       const cap = themeCap(difficulty, pass);
       if (tKey) {
@@ -727,7 +759,6 @@ JSON فقط:
         }
       }
 
-      // Similarity
       const ts = tokenSet(q0.question);
       const thr = similarityThreshold(difficulty, pass);
       for (const prev of seenTokenSets) {
@@ -739,7 +770,7 @@ JSON فقط:
 
       const q = shuffleQuestion(q0);
 
-      const idxNC = q.choices.findIndex((c) => isNoCorrectChoice(c));
+      const idxNC = q.choices.findIndex((c: string) => isNoCorrectChoice(c));
       if (idxNC !== -1) noCorrectUsed++;
 
       if (isArt) articleQuestionsUsed++;
@@ -752,26 +783,25 @@ JSON فقط:
       debug.accepted++;
     }
 
-    // Pass 1
     for (const r of allRawQuestions) addIfOk(r, 1);
 
-    // Pass 2
     if (final.length < TARGET_QUESTIONS) {
       for (const r of allRawQuestions) addIfOk(r, 2);
     }
 
-    // Pass 3
     if (final.length < TARGET_QUESTIONS) {
       for (const r of allRawQuestions) addIfOk(r, 3);
     }
 
-    // ---- refill if still missing
     if (final.length < TARGET_QUESTIONS) {
       for (let attempt = 0; attempt < REFILL_ATTEMPTS && final.length < TARGET_QUESTIONS; attempt++) {
         const need = TARGET_QUESTIONS - final.length;
         const chunk = chunks[(attempt + 2) % chunks.length] || rawText.slice(0, 14000);
 
-        const avoidList = final.slice(0, 14).map((q) => `- ${q.question}`).join("\n");
+        const avoidList = final
+          .slice(0, 14)
+          .map((q: QCMQuestion) => `- ${q.question}`)
+          .join("\n");
 
         const prompt = `
 نحتاج إلى ${need} سؤال/أسئلة جديدة، وتجنّب تكرار الأسئلة التالية:
@@ -781,6 +811,7 @@ ${avoidList}
 - استخرج المصطلحات/الأحكام/التمييزات من هذا الجزء فقط.
 - اجعل كل الخيارات الأربعة من ألفاظ هذا الجزء (حتى المشتتات).
 - لا تكثر من أرقام المواد.
+- ✅ لكل سؤال: evidenceQuote + evidenceIds كما سبق.
 
 أنشئ ${need + REFILL_OVERGEN} سؤال QCM من هذا الجزء فقط.
 
@@ -791,7 +822,14 @@ ${buildAnswerRules(options)}
 JSON فقط:
 {
   "questions": [
-    { "question": "", "choices": ["", "", "", ""], "correctIndex": ${singleOnly ? "0" : "0 | [0,1]"}, "explanation": "" }
+    {
+      "question": "",
+      "choices": ["", "", "", ""],
+      "correctIndex": ${singleOnly ? "0" : "0 | [0,1]"},
+      "explanation": "",
+      "evidenceIds": ["p03-02"],
+      "evidenceQuote": ""
+    }
   ]
 }
 
@@ -801,7 +839,7 @@ JSON فقط:
         try {
           const raw = await callOpenAI(prompt);
           const parsed = safeJsonParse(raw);
-          const list = Array.isArray(parsed?.questions) ? parsed.questions : [];
+          const list: any[] = Array.isArray(parsed?.questions) ? parsed.questions : [];
           for (const item of list) {
             addIfOk({ ...item, __chunk: chunk }, 3);
             if (final.length >= TARGET_QUESTIONS) break;
