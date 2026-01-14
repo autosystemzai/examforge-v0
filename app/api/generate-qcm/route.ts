@@ -6,7 +6,6 @@ import {
   suspiciousMathQuestion,
   QCMQuestion,
   Options,
-  Difficulty,
 } from "./validators";
 
 export const runtime = "nodejs";
@@ -36,12 +35,6 @@ const MAX_ARTICLE_QUESTIONS_LAST = 6;
 
 /* ================= HELPERS ================= */
 
-function arabicDifficulty(d: Difficulty) {
-  if (d === "easy") return "سهل";
-  if (d === "hard") return "صعب";
-  return "متوسط";
-}
-
 function buildAnswerRules(options: Options) {
   const rules: string[] = [];
   const singleOnly = options.singleAnswer && !options.multipleAnswers;
@@ -61,35 +54,20 @@ function buildAnswerRules(options: Options) {
   return rules.join("\n");
 }
 
-function buildDifficultyRules(difficulty: Difficulty, options: Options) {
+// ✅ Hard-only difficulty rules (difficulties removed)
+function buildHardRules(options: Options) {
   const singleOnly = options.singleAnswer && !options.multipleAnswers;
 
-  if (difficulty === "hard") {
-    return [
-      "قواعد المستوى (صعب):",
-      "- ممنوع الأسئلة الإنشائية/العامة التي تُحل بالحدس (هدف/أهمية/دور...) إلا إذا كانت مرتبطة بشرط/أثر/استثناء/تمييز وارد في الجزء.",
-      "- ركّز على: شرط/أثر/نتيجة/استثناء/تعارض/تمييز/حالة قصيرة.",
-      "- المشتتات: تقنية وقريبة جداً من الصحيح وتختلف بقيد واحد فقط (Near-miss).",
-      "- تجنب الخيارات المتطرفة/الساذجة (دائماً/أبداً/لا شيء/لا علاقة).",
-      singleOnly
-        ? "- (إجابة واحدة) تجنب الكلمات التفضيلية: الأفضل/الأكثر/الأنسب/الأهم."
-        : "- (عدة إجابات) غالباً 2 إجابات صحيحة وأحياناً 3.",
-      "- لا تجعل الامتحان مجرد أرقام مواد.",
-    ].join("\n");
-  }
-
-  if (difficulty === "easy") {
-    return [
-      "قواعد المستوى (سهل):",
-      "- ركّز على الفهم الأساسي والتعريفات الواضحة.",
-      "- اجعل المشتتات منطقية لكنها أبسط من المتوسط/الصعب.",
-    ].join("\n");
-  }
-
   return [
-    "قواعد المستوى (متوسط):",
-    "- 60% فهم مباشر + 40% تطبيق/تمييز.",
-    "- اربط أحياناً فكرتين من النص.",
+    "قواعد المستوى (صعب):",
+    "- ممنوع الأسئلة الإنشائية/العامة التي تُحل بالحدس (هدف/أهمية/دور...) إلا إذا كانت مرتبطة بشرط/أثر/استثناء/تمييز وارد في الجزء.",
+    "- ركّز على: شرط/أثر/نتيجة/استثناء/تعارض/تمييز/حالة قصيرة.",
+    "- المشتتات: تقنية وقريبة جداً من الصحيح وتختلف بقيد واحد فقط (Near-miss).",
+    "- تجنب الخيارات المتطرفة/الساذجة (دائماً/أبداً/لا شيء/لا علاقة).",
+    singleOnly
+      ? "- (إجابة واحدة) تجنب الكلمات التفضيلية: الأفضل/الأكثر/الأنسب/الأهم."
+      : "- (عدة إجابات) غالباً 2 إجابات صحيحة وأحياناً 3.",
+    "- لا تجعل الامتحان مجرد أرقام مواد.",
   ].join("\n");
 }
 
@@ -367,7 +345,7 @@ function getSmartChunks(text: string, k: number): string[] {
   return chunks.filter((c: string) => c.trim().length > 50);
 }
 
-/* ================= GROUNDEDNESS ================= */
+/* ================= GROUNDEDNESS (Hard-only thresholds) ================= */
 
 function getCorrectChoiceTexts(q: QCMQuestion): string[] {
   if (typeof q.correctIndex === "number") return [q.choices[q.correctIndex] ?? ""].filter(Boolean);
@@ -381,7 +359,7 @@ function overlapCount(tokens: string[], chunkKey: string): number {
   return c;
 }
 
-function appearsInChunkEnough(q: QCMQuestion, chunk: string, difficulty: Difficulty, pass: 1 | 2 | 3): boolean {
+function appearsInChunkEnough(q: QCMQuestion, chunk: string, pass: 1 | 2 | 3): boolean {
   const chunkKey = normalizeKey(chunk);
 
   const qTokens = extractTokensArabic(q.question);
@@ -391,26 +369,17 @@ function appearsInChunkEnough(q: QCMQuestion, chunk: string, difficulty: Difficu
   const qOverlap = overlapCount(qTokens, chunkKey);
   const cOverlap = overlapCount(correctTokens, chunkKey);
 
-  if (difficulty === "hard") {
-    if (pass === 1) return qOverlap >= 4 && cOverlap >= 2;
-    if (pass === 2) return qOverlap >= 3 && cOverlap >= 1;
-    return qOverlap >= 2 && cOverlap >= 1;
-  }
-
-  if (difficulty === "medium") {
-    if (pass === 1) return qOverlap >= 3 && cOverlap >= 1;
-    return qOverlap >= 2 && cOverlap >= 1;
-  }
-
+  // Hard-only progressive relaxation
+  if (pass === 1) return qOverlap >= 4 && cOverlap >= 2;
+  if (pass === 2) return qOverlap >= 3 && cOverlap >= 1;
   return qOverlap >= 2 && cOverlap >= 1;
 }
 
-function choicesGroundedEnough(q: QCMQuestion, chunk: string, difficulty: Difficulty, pass: 1 | 2 | 3): boolean {
+function choicesGroundedEnough(q: QCMQuestion, chunk: string, pass: 1 | 2 | 3): boolean {
   const chunkKey = normalizeKey(chunk);
 
-  let needed = 2;
-  if (difficulty === "hard") needed = pass === 1 ? 3 : 2;
-  if (difficulty === "medium") needed = 2;
+  // Hard-only needed grounded choices
+  const needed = pass === 1 ? 3 : 2;
 
   let grounded = 0;
   for (const ch of q.choices) {
@@ -433,8 +402,8 @@ function themeKey(question: string): string {
   return strong.join("|");
 }
 
-function themeCap(difficulty: Difficulty, pass: 1 | 2 | 3) {
-  if (difficulty !== "hard") return pass === 1 ? 3 : 4;
+// Hard-only theme cap
+function themeCap(pass: 1 | 2 | 3) {
   if (pass === 1) return 1;
   if (pass === 2) return 2;
   return 3;
@@ -442,15 +411,15 @@ function themeCap(difficulty: Difficulty, pass: 1 | 2 | 3) {
 
 /* ================= QUALITY HEURISTICS ================= */
 
-function hasGiveawayChoices(q: QCMQuestion, difficulty: Difficulty, pass: 1 | 2 | 3): boolean {
+function hasGiveawayChoices(q: QCMQuestion, pass: 1 | 2 | 3): boolean {
   const hits = q.choices.reduce(
     (acc: number, c: string) =>
       acc + (EASY_GIVEAWAY_CHOICE_PATTERNS.some((re: RegExp) => re.test(c)) ? 1 : 0),
     0
   );
 
-  if (difficulty === "hard") return pass === 1 ? hits >= 1 : hits >= 2;
-  return hits >= 2;
+  // Hard-only thresholds
+  return pass === 1 ? hits >= 1 : hits >= 2;
 }
 
 function isArticleQuestion(q: QCMQuestion): boolean {
@@ -458,10 +427,11 @@ function isArticleQuestion(q: QCMQuestion): boolean {
   return ARTICLE_PATTERN.test(hay);
 }
 
-function similarityThreshold(difficulty: Difficulty, pass: 1 | 2 | 3) {
-  if (difficulty === "hard") return pass === 1 ? 0.66 : pass === 2 ? 0.74 : 0.82;
-  if (difficulty === "medium") return pass === 1 ? 0.72 : 0.8;
-  return pass === 1 ? 0.74 : 0.82;
+// Hard-only similarity threshold (progressive)
+function similarityThreshold(pass: 1 | 2 | 3) {
+  if (pass === 1) return 0.66;
+  if (pass === 2) return 0.74;
+  return 0.82;
 }
 
 /* ================= OPENAI (ROBUST) ================= */
@@ -521,7 +491,8 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     const rawText = String(body.cleanedText || "");
-    const difficulty: Difficulty = body.difficulty || "medium";
+
+    // ✅ difficulties removed: we ignore any body.difficulty if sent
     const options: Options = body.options;
     const debugEnabled = Boolean(body.debug);
 
@@ -537,7 +508,8 @@ export async function POST(req: Request) {
     const singleOnly = options.singleAnswer && !options.multipleAnswers;
     const chunks = getSmartChunks(rawText, CHUNKS);
 
-    const askTotal = difficulty === "hard" && singleOnly ? PROMPT_QUESTIONS + HARD_SINGLE_EXTRA : PROMPT_QUESTIONS;
+    // Hard-only askTotal (keep the same hard-single boost)
+    const askTotal = singleOnly ? PROMPT_QUESTIONS + HARD_SINGLE_EXTRA : PROMPT_QUESTIONS;
     const perChunk = Math.max(8, Math.ceil(askTotal / chunks.length));
 
     const allRawQuestions: RawWithChunk[] = [];
@@ -549,9 +521,9 @@ export async function POST(req: Request) {
       const prompt = `
 أنشئ ${perChunk} سؤال QCM عربي من هذا الجزء فقط (لا تخرج عن محتواه).
 
-المستوى: ${arabicDifficulty(difficulty)}
+المستوى: صعب
 
-${buildDifficultyRules(difficulty, options)}
+${buildHardRules(options)}
 ${buildAnswerRules(options)}
 
 قواعد إلزامية:
@@ -668,13 +640,12 @@ JSON فقط:
       }
 
       // ✅ evidence is strict only in pass 1, relaxed later so we always reach 20
-if (pass === 1) {
-  if (!evidenceValid(q0, chunk || rawText, allEvidenceIds)) {
-    debug.rejectedEvidence++;
-    return;
-  }
-}
-
+      if (pass === 1) {
+        if (!evidenceValid(q0, chunk || rawText, allEvidenceIds)) {
+          debug.rejectedEvidence++;
+          return;
+        }
+      }
 
       const fullContent = `${q0.question}\n${q0.explanation}\n${q0.choices.join("\n")}`;
       if (FORBIDDEN_PATTERNS.some((re: RegExp) => re.test(fullContent))) {
@@ -682,17 +653,17 @@ if (pass === 1) {
         return;
       }
 
-      if (chunk && !appearsInChunkEnough(q0, chunk, difficulty, pass)) {
+      if (chunk && !appearsInChunkEnough(q0, chunk, pass)) {
         debug.rejectedGrounding++;
         return;
       }
 
-      if (chunk && !choicesGroundedEnough(q0, chunk, difficulty, pass)) {
+      if (chunk && !choicesGroundedEnough(q0, chunk, pass)) {
         debug.rejectedChoicesGrounding++;
         return;
       }
 
-      if (hasGiveawayChoices(q0, difficulty, pass)) {
+      if (hasGiveawayChoices(q0, pass)) {
         debug.rejectedGiveaway++;
         return;
       }
@@ -703,42 +674,41 @@ if (pass === 1) {
         return;
       }
 
-      if (difficulty === "hard") {
-        if (pass === 1) {
-          if (DEFINITION_STEMS.some((re: RegExp) => re.test(q0.question))) {
-            debug.rejectedHardRules++;
-            return;
-          }
-          if (GENERIC_HARD_STEMS.some((re: RegExp) => re.test(q0.question))) {
-            debug.rejectedHardRules++;
-            return;
-          }
-          if (!HARD_MARKERS.some((re: RegExp) => re.test(q0.question))) {
-            debug.rejectedHardRules++;
-            return;
-          }
+      // ✅ Hard-only rules always applied (same as previous "difficulty === hard")
+      if (pass === 1) {
+        if (DEFINITION_STEMS.some((re: RegExp) => re.test(q0.question))) {
+          debug.rejectedHardRules++;
+          return;
         }
-
-        if (pass === 2) {
-          if (GENERIC_HARD_STEMS.some((re: RegExp) => re.test(q0.question))) {
-            debug.rejectedHardRules++;
-            return;
-          }
-          if (DEFINITION_STEMS.some((re: RegExp) => re.test(q0.question)) && q0.question.length < 110) {
-            debug.rejectedHardRules++;
-            return;
-          }
+        if (GENERIC_HARD_STEMS.some((re: RegExp) => re.test(q0.question))) {
+          debug.rejectedHardRules++;
+          return;
         }
+        if (!HARD_MARKERS.some((re: RegExp) => re.test(q0.question))) {
+          debug.rejectedHardRules++;
+          return;
+        }
+      }
 
-        if (pass === 3) {
-          if (GENERIC_HARD_STEMS.some((re: RegExp) => re.test(q0.question))) {
-            debug.rejectedHardRules++;
-            return;
-          }
-          if (DEFINITION_STEMS.some((re: RegExp) => re.test(q0.question)) && q0.question.length < 95) {
-            debug.rejectedHardRules++;
-            return;
-          }
+      if (pass === 2) {
+        if (GENERIC_HARD_STEMS.some((re: RegExp) => re.test(q0.question))) {
+          debug.rejectedHardRules++;
+          return;
+        }
+        if (DEFINITION_STEMS.some((re: RegExp) => re.test(q0.question)) && q0.question.length < 110) {
+          debug.rejectedHardRules++;
+          return;
+        }
+      }
+
+      if (pass === 3) {
+        if (GENERIC_HARD_STEMS.some((re: RegExp) => re.test(q0.question))) {
+          debug.rejectedHardRules++;
+          return;
+        }
+        if (DEFINITION_STEMS.some((re: RegExp) => re.test(q0.question)) && q0.question.length < 95) {
+          debug.rejectedHardRules++;
+          return;
         }
       }
 
@@ -754,7 +724,7 @@ if (pass === 1) {
       }
 
       const tKey = themeKey(q0.question);
-      const cap = themeCap(difficulty, pass);
+      const cap = themeCap(pass);
       if (tKey) {
         const cnt = themeCounts.get(tKey) ?? 0;
         if (cnt >= cap) {
@@ -764,7 +734,7 @@ if (pass === 1) {
       }
 
       const ts = tokenSet(q0.question);
-      const thr = similarityThreshold(difficulty, pass);
+      const thr = similarityThreshold(pass);
       for (const prev of seenTokenSets) {
         if (jaccard(ts, prev) > thr) {
           debug.rejectedSimilar++;
@@ -819,8 +789,8 @@ ${avoidList}
 
 أنشئ ${need + REFILL_OVERGEN} سؤال QCM من هذا الجزء فقط.
 
-المستوى: ${arabicDifficulty(difficulty)}
-${buildDifficultyRules(difficulty, options)}
+المستوى: صعب
+${buildHardRules(options)}
 ${buildAnswerRules(options)}
 
 JSON فقط:

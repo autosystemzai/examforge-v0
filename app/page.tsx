@@ -115,7 +115,7 @@ export default function Page() {
       } catch {}
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email, pdfServiceBase]);
+    }, [email, pdfServiceBase]);
 
   async function handleGenerate() {
     if (!file || busy || !hasCredits) return;
@@ -454,16 +454,6 @@ export default function Page() {
             الرصيد المتبقي: {creditsText}
           </div>
         </div>
-
-        <Section title="مستوى الصعوبة :">
-          <Radio label="سهل" checked={difficulty === "easy"} onChange={() => setDifficulty("easy")} />
-          <Radio
-            label="متوسط"
-            checked={difficulty === "medium"}
-            onChange={() => setDifficulty("medium")}
-          />
-          <Radio label="صعب" checked={difficulty === "hard"} onChange={() => setDifficulty("hard")} />
-        </Section>
 
         <Section title="نوع الأسئلة :">
           <Radio
